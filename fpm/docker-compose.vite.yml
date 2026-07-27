@@ -1,0 +1,50 @@
+# Opt-in: Vite dev server for hacking on the React back-office source with HMR.
+#
+# NOT needed to USE /melis-react — the baked image ships a committed production
+# build that nginx + PHP-FPM serve on their own. This override is only for
+# developing the React UI (melis-core/ui-react, inside the melis-app named volume):
+#
+#   docker compose -f docker-compose.yml -f docker-compose.vite.yml up -d
+#   # → http://localhost:5173   (HMR; proxies /melis, /assets, /Melis* to nginx)
+#
+# Note: with this stack the sources live in the melis-app named volume (not on the
+# host). For day-to-day React development prefer the install/ stack, where the code
+# is bind-mounted from ./melis and editable with your IDE.
+services:
+  vite:
+    image: node:22-alpine
+    container_name: ${MELIS_CONTAINER_NAME:-melis}-vite
+    working_dir: /var/www/${APP_NAME:-melis}/vendor/melisplatform/melis-core/ui-react
+    # If the sources aren't there yet, EXIT (don't loop): a defensive re-enable can
+    # REPLACE vendor/melisplatform/melis-core after this container starts, which
+    # orphans any working directory / node_modules volume mounted on the old
+    # directory. Exiting lets Docker restart the container (restart: unless-stopped)
+    # so cwd and the volume re-mount onto the fresh directory.
+    command: >
+      sh -c "A=/var/www/${APP_NAME:-melis}/vendor/melisplatform/melis-core/ui-react;
+             if [ ! -f $$A/package.json ]; then
+               echo '[vite] melis-core/ui-react not present in the app volume yet — retrying...';
+               sleep 10; exit 0;
+             fi;
+             cd $$A && npm ci --no-audit --no-fund && exec npm run dev -- --host 0.0.0.0"
+    ports:
+      - "${VITE_PORT:-5173}:5173"
+    volumes:
+      - melis_app:/var/www/${APP_NAME:-melis}
+      # Keep node_modules out of the shared app volume (php/nginx don't need it).
+      - vite_node_modules:/var/www/${APP_NAME:-melis}/vendor/melisplatform/melis-core/ui-react/node_modules
+    environment:
+      # Vite proxies backend calls to nginx (the php service is FPM-only, no HTTP).
+      MELIS_TARGET: http://web
+      # Present a port-less Host header to Melis — its domain routing redirect-loops
+      # when the Host carries a port (vite.config.ts honours MELIS_PROXY_HOST).
+      MELIS_PROXY_HOST: localhost
+    depends_on:
+      - web
+    networks:
+      - melis
+    restart: unless-stopped
+
+volumes:
+  vite_node_modules:
+    name: ${MELIS_CONTAINER_NAME:-melis}-vite-node-modules

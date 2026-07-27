@@ -1,0 +1,138 @@
+# Melis Platform — turnkey local install (the React development stack).
+#   1) cp .env.example .env
+#   2) mkdir -p melis          # bind-mount source; required on Rancher Desktop/WSL
+#   3) docker compose up --build
+#   4) open http://localhost:8080 and follow the Melis web installer
+#
+# Three services start by default: php (Apache + Melis), db (MySQL) and vite (the
+# React dev server with HMR on :5173). This is the stack meant for working ON the
+# React back-office, so vite is part of it rather than an opt-in override — the
+# code it serves is the same ./melis tree you edit on your host.
+# Don't want it? `docker compose up -d php db` (or `docker compose stop vite`).
+services:
+  php:
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+      args:
+        APP_NAME: ${APP_NAME:-melis}
+        TZ: ${TZ:-Europe/Paris}
+        PHP_VERSION: ${PHP_VERSION:-8.3}
+        WITH_XDEBUG: ${WITH_XDEBUG:-0}
+    container_name: ${MELIS_CONTAINER_NAME:-melis}-php
+    # On Linux, let Xdebug reach your IDE on the host (no-op on macOS/Windows):
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${HOST_PORT:-8080}:80"
+    # The Melis skeleton is created here on first run and kept on the host so
+    # you can edit the code. To start clean, delete ./melis and re-run.
+    volumes:
+      - ./melis:/var/www/${APP_NAME:-melis}
+      # Composer cache. Path must match COMPOSER_HOME (/composer, set in the
+      # Dockerfile) — the web installer runs Composer as www-data and shares this
+      # cache; a cache under /root would be unreadable to it. The entrypoint chowns
+      # it to www-data on every boot (a fresh volume mounts in root-owned).
+      - composer-cache:/composer/cache
+    environment:
+      APP_NAME: ${APP_NAME:-melis}
+      TZ: ${TZ:-Europe/Paris}
+      HOST_PORT: ${HOST_PORT:-8080}
+      # NOTE: host without :port — keep it clean (a "host:port" value breaks flyway/JDBC)
+      MYSQL_HOST: ${MELIS_CONTAINER_NAME:-melis}-db
+      MYSQL_HOSTNAME: ${MELIS_CONTAINER_NAME:-melis}-db
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-melis}
+      MYSQL_USER: ${MYSQL_USER:-melis}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-melis}
+      # Lifts Composer off the 60/hour unauthenticated GitHub API limit that
+      # otherwise breaks the web installer's module step — and, in this repo, the
+      # React enablement step (3 more GitHub vcs repos). See .env.example.
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      # React back-office (/melis-react): enabled by default, set 0 for legacy-only.
+      WITH_REACT: ${WITH_REACT:-1}
+      MELIS_PLATFORM: ${MELIS_PLATFORM:-local}
+      MELIS_MODULE: ${MELIS_MODULE:-MySite}
+    networks:
+      - melis
+    restart: unless-stopped
+
+  db:
+    image: mysql:${MYSQL_VERSION:-8.4}
+    container_name: ${MELIS_CONTAINER_NAME:-melis}-db
+    # Bound to localhost only — the DB is reachable container-to-container over the
+    # melis network; this host mapping is just for a local GUI client, not the LAN.
+    ports:
+      - "127.0.0.1:${DB_HOST_PORT:-33061}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-melis}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-melis}
+      MYSQL_USER: ${MYSQL_USER:-melis}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-melis}
+    command:
+      - "mysqld"
+      - "--character-set-server=utf8mb4"
+      - "--collation-server=utf8mb4_general_ci"
+    volumes:
+      - melis_db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u${MYSQL_USER:-melis}", "-p${MYSQL_PASSWORD:-melis}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - melis
+    restart: always
+
+  # React dev server (Vite + HMR) — part of this stack, not an opt-in override.
+  # Serves the SPA source from vendor/melisplatform/melis-core/ui-react with hot
+  # reload at http://localhost:${VITE_PORT}, proxying /melis, /assets and /Melis*
+  # to the php container. NOT what /melis-react uses: that is served by PHP from
+  # melis-core's committed production build (`npm run build` regenerates it).
+  vite:
+    image: node:${NODE_VERSION:-22}-alpine
+    container_name: ${MELIS_CONTAINER_NAME:-melis}-vite
+    working_dir: /var/www/${APP_NAME:-melis}/vendor/melisplatform/melis-core/ui-react
+    # If the sources aren't there yet, EXIT (don't loop): on first boot the React
+    # enablement REPLACES vendor/melisplatform/melis-core after this container has
+    # started, which orphans a working directory or node_modules volume mounted on
+    # the old directory. Exiting lets `restart: unless-stopped` bring us back onto
+    # the fresh one. Expect a few restarts while the skeleton downloads.
+    command: >
+      sh -c "A=/var/www/${APP_NAME:-melis}/vendor/melisplatform/melis-core/ui-react;
+             if [ ! -f $$A/package.json ]; then
+               echo '[vite] melis-core/ui-react not present yet (first boot installs it) — retrying...';
+               sleep 10; exit 0;
+             fi;
+             cd $$A && npm ci --no-audit --no-fund && exec npm run dev -- --host 0.0.0.0"
+    ports:
+      - "${VITE_PORT:-5173}:5173"
+    volumes:
+      - ./melis:/var/www/${APP_NAME:-melis}
+      # Keep node_modules off the host bind mount (faster installs, no host clutter).
+      - vite_node_modules:/var/www/${APP_NAME:-melis}/vendor/melisplatform/melis-core/ui-react/node_modules
+    environment:
+      # Vite proxies backend calls (auth, react-api, module assets) to Apache.
+      MELIS_TARGET: http://php
+      # Present a port-less Host header to Melis — its domain routing redirect-loops
+      # when the Host carries a port (vite.config.ts honours MELIS_PROXY_HOST).
+      MELIS_PROXY_HOST: localhost
+    depends_on:
+      - php
+    networks:
+      - melis
+    restart: unless-stopped
+
+networks:
+  melis:
+    name: ${MELIS_CONTAINER_NAME:-melis}-network
+
+volumes:
+  melis_db_data:
+    name: ${MELIS_CONTAINER_NAME:-melis}-db-data
+  vite_node_modules:
+    name: ${MELIS_CONTAINER_NAME:-melis}-vite-node-modules
+  composer-cache:
+    name: ${MELIS_CONTAINER_NAME:-melis}-composer-cache
