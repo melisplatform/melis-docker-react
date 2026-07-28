@@ -163,6 +163,38 @@ installer completes, then activate on the next request.
 Not interested in React? `WITH_REACT=0` in `.env` (turnkey stack), or build the
 image with `--build-arg WITH_REACT=0` (pre-built/fpm) — you get a plain legacy Melis.
 
+### Temporary dependency pin — `laminas/laminas-serializer:2.17`
+
+The React enablement additionally requires `laminas/laminas-serializer:2.17`.
+**This is a workaround and should be removed once upstream allows it.**
+
+`melis-core` allows `^2.17 || ^3.0`, so resolving it on its own — which is what
+enabling React does, before the web installer has added the CMS modules — picks the
+newest match, `2.18.0`, and locks it. The installer later adds `melis-front`, which
+requires *exactly* `2.17`, using a **partial** update (`--root-reqs`) that may not
+downgrade an already-locked package. It fails with:
+
+```
+laminas/laminas-serializer[2.17.0] but the package is fixed to 2.18.0
+(lock file version) by a partial update and that version does not match
+```
+
+and — because the installer ignores Composer's exit code — carries on and activates
+modules it never installed, which is a bootstrap fatal on every URL. (The installer
+guard repairs that afterwards; the pin avoids the failed step altogether.)
+
+**When can it go?** When `melis-front` stops pinning an exact version. Check with:
+
+```bash
+docker compose exec php composer why laminas/laminas-serializer
+# melisplatform/melis-front vX.Y.Z requires laminas/laminas-serializer (2.17)  ← still pinned
+```
+
+If that constraint becomes a range (e.g. `^2.17`), delete the
+`"laminas/laminas-serializer:2.17"` line from `*/conf/enable-react.sh` (four copies:
+`install/`, `prebuilt/`, `fpm/`, `app/latest/`). Tracked upstream as the
+`melis-front` half of the issue described in [`CLAUDE.md`](CLAUDE.md) gotcha 8.
+
 ### Developing the React UI (Vite dev server)
 
 The **turnkey stack ([`install/`](install/)) starts a Vite dev server by default** —

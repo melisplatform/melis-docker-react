@@ -156,6 +156,17 @@ secret** (`secrets: github_token: environment: GITHUB_TOKEN`) — unauthenticate
 pre-warm hits the 60 req/h limit and gives up. A Composer run with no token fails in
 ~2 s, which is easy to mistake for a fast success when timing things.
 
+**`enable-react.sh` pins `laminas/laminas-serializer:2.17` — TEMPORARY, remove when
+upstream allows.** melis-core allows `^2.17 || ^3.0`; resolving it alone (which is
+what enablement does, pre-installer) picks 2.18.0 and locks it. The wizard then adds
+`melis-front`, which requires *exactly* `2.17`, via `--root-reqs` — a partial update
+that cannot downgrade a locked package → resolution fails → gotcha 8 plays out
+(modules activated but absent). Observed end-to-end on `app/latest` 2026-07-28; the
+guard repaired it with `-W` in ~68 s, but the pin avoids the failure entirely.
+Removal check: `composer why laminas/laminas-serializer` — if melis-front's
+constraint is no longer the exact `2.17`, drop the line from all four
+`*/conf/enable-react.sh`. Documented for users in README.
+
 React-specific gotchas (each cost a debugging round — respect them):
 - **`composer require` MUST use `--no-scripts` in `enable-react.sh`.** The
   skeleton's `post-update-cmd` hook (`MelisDbDeploy\DbDeployOnComposerUpdate`)

@@ -65,10 +65,27 @@ composer config repositories.melis-react-override  vcs https://github.com/melisp
 # loses nothing: the web installer's own Composer runs (no --no-scripts) and its
 # dbdeploy pass publish + apply every module's schema deltas during the install —
 # same as the vanilla flow, where create-project never fires post-update-cmd.
+# TEMPORARY PIN — laminas/laminas-serializer:2.17
+# ---------------------------------------------------------------------------
+# Remove this line once melisplatform/melis-front relaxes its constraint.
+# Why it is here: melis-core allows `^2.17 || ^3.0`, so resolving it on its own
+# (which is exactly what this require does, before the web installer has added the
+# CMS modules) picks the newest match — 2.18.0 — and writes that into composer.lock.
+# The wizard later adds melis-front, which requires *exactly* `2.17`; its Composer
+# call uses --root-reqs (a PARTIAL update) and so is not allowed to downgrade an
+# already-locked package. Result: "Your requirements could not be resolved…
+# the package is fixed to 2.18.0 (lock file version) by a partial update", the
+# installer ignores the failure (see gotcha 8), and MelisEngine/MelisFront end up
+# activated but absent — a bootstrap fatal on every URL. Observed end-to-end.
+# Pinning the version melis-front will ask for means the solver never picks 2.18.
+# The installer guard also repairs this after the fact; this just avoids the failure.
+# Check whether it is still needed:
+#   composer why laminas/laminas-serializer      # melis-front still on "2.17"?
 composer require --no-interaction --no-progress --prefer-dist -W --no-scripts \
     "melisplatform/melis-core:dev-melis-react as 5.3.999" \
     "melisplatform/melis-react-api:dev-melis-react" \
-    "melisplatform/melis-react-override:dev-melis-react"
+    "melisplatform/melis-react-override:dev-melis-react" \
+    "laminas/laminas-serializer:2.17"
 
 php "$CONF_DIR/enable-react.php" "$APP_DIR/config/application.config.php"
 php -l "$APP_DIR/config/application.config.php" >/dev/null
