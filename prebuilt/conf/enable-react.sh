@@ -40,11 +40,14 @@ export COMPOSER_ALLOW_SUPERUSER=1
 if [ -n "${GITHUB_TOKEN:-}" ]; then
     export COMPOSER_AUTH="{\"github-oauth\":{\"github.com\":\"${GITHUB_TOKEN}\"}}"
 else
-    echo "[melis-docker] WARNING: no GITHUB_TOKEN set. With the three React repos this"
-    echo "[melis-docker]   project now resolves 7 GitHub 'vcs' repositories, all on the"
-    echo "[melis-docker]   unauthenticated API limit (60 req/h per IP). If this step fails"
-    echo "[melis-docker]   with 'Could not authenticate against github.com', set"
-    echo "[melis-docker]   GITHUB_TOKEN in .env and restart."
+    echo "[melis-docker] WARNING: no GITHUB_TOKEN set — this step will almost certainly"
+    echo "[melis-docker]   FAIL. melis-react-api and melis-react-override are PRIVATE"
+    echo "[melis-docker]   repositories: without a token (scope 'repo') Composer falls back"
+    echo "[melis-docker]   to the git driver and dies with"
+    echo "[melis-docker]     fatal: could not read Username for 'https://github.com'"
+    echo "[melis-docker]   A token is also what keeps the 7 GitHub 'vcs' repositories this"
+    echo "[melis-docker]   project resolves off the unauthenticated API limit (60 req/h)."
+    echo "[melis-docker]   Set GITHUB_TOKEN in .env and restart."
 fi
 
 composer config repositories.melis-core            vcs https://github.com/melisplatform/melis-core

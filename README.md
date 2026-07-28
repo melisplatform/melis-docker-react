@@ -12,7 +12,7 @@ with the **new React back-office enabled by default**: on top of the classic bac
 | **Pre-built image** | Pull a ready-to-run Melis (no build) + MySQL, finish via the web installer | Fastest evaluation / "just run it" | [`prebuilt/`](prebuilt/) |
 | **Turnkey build** | Builds a fresh Melis skeleton on your host, editable code in `./melis`, + MySQL | Developers who want the code locally | [`install/`](install/) |
 | **nginx + PHP-FPM** | Production-style stack (nginx front, PHP-FPM, MySQL), skeleton baked into the image | A more production-like topology | [`fpm/`](fpm/) |
-| **Mount existing project** | Mounts an existing Melis project into a PHP-8.3-apache build | Projects you already have locally | [`app/latest/`](app/latest/) |
+| **Mount existing project** | Mounts an existing Melis project into a PHP-apache build (React BO opt-in) | Projects you already have locally | [`app/latest/`](app/latest/) |
 | **Dev base images** | Per-PHP-version base images only (Apache or FPM, PHP 8.1–8.5) | Building your own images | [`dev/`](dev/) |
 
 > All paths finish the same way: the **native Melis web installer** at
@@ -59,13 +59,56 @@ docker compose up --build
 ```
 
 ### Path D — Mount an existing Melis project
-Clone this repo **inside your Melis project root**, then:
+Unlike the other paths, this one does **not** create a Melis project — it mounts one
+you already have. `docker-compose.yml` mounts `../../../`, which is the directory
+*containing* this repo, so clone it **inside your Melis project root**:
+
 ```bash
+# 1. clone into your Melis project root (not the other way round)
+cd /path/to/my-melis-project
+git clone https://github.com/melisplatform/melis-docker-react.git melis-docker-react
+
+# 2. configure
 cd melis-docker-react/app/latest
 cp .env.example .env
-docker compose up --build
+#    edit APP_NAME + DB creds to match your project
+
+# 3. optional but recommended: boot once with WITH_REACT=0 (the default)
+docker compose up -d --build     # confirms the mount + DB work
+
+# 4. OPTIONAL — enable the React back-office.
+#    Make sure your project is committed first: this step rewrites your
+#    composer.json, composer.lock and config/application.config.php.
+#    Then edit .env by hand:   WITH_REACT=1
+#                              GITHUB_TOKEN=ghp_...   (scope: repo)
+docker compose up -d
 ```
+
+Before committing, add these to your **project's** `.gitignore` — the stack creates
+them inside your working copy:
+
+```gitignore
+melis-docker-react/    # this repo, now nested in your project
+auth.json              # written by the guard; contains your GITHUB_TOKEN
+data/logs/             # installer log
+```
+
+Step 4 is the React back-office, and it is **opt-in on this path only**: the
+application directory is *your* existing project, so enabling it rewrites your
+`composer.json`, `composer.lock` and `config/application.config.php` on the host —
+hence the commit first. `GITHUB_TOKEN` needs the **`repo` scope** here
+(`melis-react-api` and `melis-react-override` are private repositories). The step is
+idempotent and never fatal: if it fails you keep the legacy back-office and can retry
+by restarting the container. `/melis-react` goes live once the platform is installed.
+
 > **Windows:** a `start-docker.bat` helper is provided at the repo root for this path.
+>
+> **Your database is empty.** The `db` service is a fresh MySQL — it does not contain
+> your data, and Melis reads its credentials from
+> `config/autoload/platforms/<MELIS_PLATFORM>.php` *inside your project*, not from
+> `.env`. To use existing data, point that file at the container (`hostname` =
+> `<MELIS_CONTAINER_NAME>-db`, **no `:port`**) and import your dump. Full details in
+> [`app/latest/README.md`](app/latest/README.md).
 
 ### Finish the install
 Open http://localhost:8080 and follow the **Melis web installer**. When it asks for
@@ -254,9 +297,16 @@ more. That step runs Composer inside the request as `www-data`, which (with a
 root-owned `/var/www` as its HOME) used to run with **no cache at all** and
 re-downloaded every repository's metadata: ~12 minutes, almost all of it network
 round-trips. The images now give Composer a shared, writable `COMPOSER_HOME`
-(`/composer`), pre-warmed at build time. If you see it crawl again, check that
-step's Composer output in `data/logs/melis-installer.log` (the installer guard
-saves it) for "Proceeding without cache", and make sure `GITHUB_TOKEN` is set.
+(`/composer`) whose metadata cache is filled at build time (~30 s resolves instead
+of ~12 min). If you see it crawl again:
+
+- **Set `GITHUB_TOKEN` in `.env` before building.** The cache pre-warm needs it;
+  unauthenticated it hits GitHub's 60 requests/hour limit and quietly gives up
+  (the build still succeeds — only the first install is slow).
+- **Rebuild after setting it**: `docker compose up -d --build`. An image built
+  without the token carries an empty cache.
+- Check that step's Composer output in `data/logs/melis-installer.log` (the
+  installer guard saves what the wizard discards) for "Proceeding without cache".
 
 **The page won't load on first start** — the first run downloads the Melis skeleton
 (turnkey) or seeds the app volume (pre-built) before Apache/nginx answers; give it

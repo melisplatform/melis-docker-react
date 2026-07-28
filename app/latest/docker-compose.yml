@@ -11,16 +11,21 @@ services:
       args:
         - APP_NAME=${APP_NAME}
         - TZ=${TZ}
+        - PHP_VERSION=${PHP_VERSION:-8.3}
         - MELIS_PLATFORM=${MELIS_PLATFORM}
         - MELIS_MODULE=${MELIS_MODULE}
       x-bake:
         cache-from: ["type=local,src=/tmp/.buildx-cache"]
         cache-to: ["type=local,dest=/tmp/.buildx-cache"]
     ports:
-      - 8080:80
+      - ${HOST_PORT:-8080}:80
     volumes:
       - ../../../:/var/www/${APP_NAME}
-      - composer-cache:/root/.composer/cache
+      # Composer cache. The path must match COMPOSER_HOME (/composer, set in the
+      # Dockerfile) — the web installer runs Composer as www-data and shares this
+      # cache; a cache under /root would be unreadable to it. The entrypoint chowns
+      # it to www-data on every boot (a fresh volume mounts in root-owned).
+      - composer-cache:/composer/cache
     environment:
       # Host without ":port" — a "host:port" value breaks Melis' flyway/JDBC URL.
       MYSQL_HOSTNAME: ${MELIS_CONTAINER_NAME}-db
@@ -30,6 +35,16 @@ services:
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
+      HOST_PORT: ${HOST_PORT:-8080}
+      # React back-office (/melis-react). OFF by default in THIS stack only: the app
+      # dir is your own pre-existing project (bind-mounted from ../../../), and
+      # enabling React rewrites its composer.json / composer.lock /
+      # config/application.config.php on the host. Set WITH_REACT=1 in .env to opt in.
+      WITH_REACT: ${WITH_REACT:-0}
+      # Lifts Composer off the 60/hour unauthenticated GitHub API limit that
+      # otherwise breaks the web installer's module step — and the React enablement
+      # (3 more GitHub vcs repos). See .env.example.
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
     networks:
       - melis
     restart: unless-stopped

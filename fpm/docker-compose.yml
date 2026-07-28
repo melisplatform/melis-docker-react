@@ -14,6 +14,12 @@ services:
         APP_NAME: ${APP_NAME:-melis}
         TZ: ${TZ:-Europe/Paris}
         PHP_VERSION: ${PHP_VERSION:-8.3}
+        WITH_REACT: ${WITH_REACT:-1}
+      # Passes GITHUB_TOKEN to the build (React enablement resolves 3 GitHub vcs
+      # repos) WITHOUT baking it into a layer. Unauthenticated builds hit the
+      # 60 req/hour GitHub API limit and fail the React step.
+      secrets:
+        - github_token
     image: ${MELIS_FPM_IMAGE:-melisplatform/melis-docker:fpm-php8.3}
     container_name: ${MELIS_CONTAINER_NAME:-melis}-php
     depends_on:
@@ -94,6 +100,12 @@ services:
     networks:
       - melis
     restart: always
+
+# Build-time only (see the php service's build.secrets): never mounted into a
+# running container, never written to an image layer.
+secrets:
+  github_token:
+    environment: GITHUB_TOKEN
 
 networks:
   melis:

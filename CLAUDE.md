@@ -25,7 +25,7 @@ changes by building/running the relevant stack, not by unit tests.
 | [`prebuilt/`](prebuilt/) | Pulls a **pre-built** image that bakes the skeleton at build time + a MySQL service. No build on the user's machine. | Fastest "just run it" |
 | [`install/`](install/) | **Turnkey build**: builds locally, `composer create-project` the skeleton at first run into `./melis` (editable on host) + MySQL. | Devs who want code locally |
 | [`fpm/`](fpm/) | Production-style **nginx + PHP-FPM + MySQL**, skeleton baked into the image. | More production-like topology |
-| [`app/latest/`](app/latest/) | **Legacy** dev path: mounts an existing Melis project (`../../../`) into a PHP-8.3-apache build. | Existing projects |
+| [`app/latest/`](app/latest/) | **Legacy** dev path: mounts an existing Melis project (`../../../`) into a PHP-apache build. React BO supported but opt-in (`WITH_REACT=1`). | Existing projects |
 | [`dev/`](dev/) | Per-PHP-version **base images** only (no compose). `dev-{apache,fpm}-{8.1,8.2,8.3,8.4,8.5}`. | Image building blocks |
 | [`local-proxy/`](local-proxy/) | Shared **nginx-proxy** (opt-in) so several stacks share `:80` by hostname. | Running many projects locally |
 
@@ -92,7 +92,20 @@ identical in `install/`/`prebuilt/`/`fpm/`, both idempotent):
 Where it runs: `install/` → entrypoint step 2b on first boot (`WITH_REACT=1`
 default, in `.env`); `prebuilt/`+`fpm/` → Dockerfile right after the skeleton bake
 (`ARG WITH_REACT=1`; GitHub token via BuildKit secret `github_token`, not a build
-arg) + a defensive entrypoint re-run for app volumes seeded from pre-React images.
+arg) + a defensive entrypoint re-run for app volumes seeded from pre-React images;
+`app/latest/` → entrypoint step 2, but **`WITH_REACT=0` by default** — that stack's
+app dir is the user's own pre-existing project (bind-mounted from `../../../`), so
+enabling React rewrites *their* `composer.json`/`composer.lock`/
+`application.config.php` on the host. It is opt-in per `.env`, never baked (nothing
+is baked there — the image is runtime-only).
+
+**Two of the three React repos are PRIVATE** (`melis-react-api`,
+`melis-react-override`; `melis-core` is public). `GITHUB_TOKEN` therefore needs the
+**`repo` scope** whenever `WITH_REACT=1` — it is not merely a rate-limit lift there.
+Without it Composer's GitHub API call 404s, it falls back to the git driver, and the
+require dies with `fatal: could not read Username for 'https://github.com'`. The
+"no scopes needed" note in the `.env.example` files applies only to the
+`WITH_REACT=0` case (the four public laminas forks).
 
 **Vite dev server**: a `node:${NODE_VERSION:-22}-alpine` service on
 `${VITE_PORT:-5173}` running `npm ci && npm run dev` in
@@ -123,6 +136,21 @@ the rest network round-trips). Fix, in all three stacks: `ENV COMPOSER_HOME=/com
 Composer steps, and the guard's repair runs reuse `getenv('COMPOSER_HOME')`. The
 image build pre-warms that cache, so even a first install reads from disk.
 `install/`'s `composer-cache` volume mounts at `/composer/cache` for the same reason.
+
+**`install/` additionally pre-warms that cache at build time** — it bakes no
+skeleton, so `/composer/cache` would otherwise ship empty. Its Dockerfile resolves
+the same graph in a throwaway `/tmp/warm` with `create-project --no-install` +
+`update --dry-run`: **metadata only**, which is precisely the expensive part
+(`repo/` is 7.0 MB and identical to prebuilt's; prebuilt's extra 134 MB is `files/`,
+package archives worth ~4 s). Costs ~12 min once at build; measured effect on a
+later resolve as `www-data`: **735 s → 31.8 s**. Never fatal — a failed pre-warm
+only means a slower first install. Relying on the entrypoint alone is not enough:
+it skips Composer entirely when it finds an existing project in the mounted
+`./melis`, which leaves the cache empty and the wizard slow (observed).
+`docker compose up --build` passes `GITHUB_TOKEN` to it via a Compose **build
+secret** (`secrets: github_token: environment: GITHUB_TOKEN`) — unauthenticated the
+pre-warm hits the 60 req/h limit and gives up. A Composer run with no token fails in
+~2 s, which is easy to mistake for a fast success when timing things.
 
 React-specific gotchas (each cost a debugging round — respect them):
 - **`composer require` MUST use `--no-scripts` in `enable-react.sh`.** The

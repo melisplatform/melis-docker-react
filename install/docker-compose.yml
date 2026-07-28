@@ -19,6 +19,13 @@ services:
         TZ: ${TZ:-Europe/Paris}
         PHP_VERSION: ${PHP_VERSION:-8.3}
         WITH_XDEBUG: ${WITH_XDEBUG:-0}
+        WITH_REACT: ${WITH_REACT:-1}
+      # Passes GITHUB_TOKEN to the build's Composer cache pre-warm WITHOUT baking it
+      # into a layer. Without it that step runs unauthenticated (60 GitHub API
+      # req/hour) and usually can't finish — the build still succeeds, but the first
+      # web install then pays the full ~12 min uncached module step.
+      secrets:
+        - github_token
     container_name: ${MELIS_CONTAINER_NAME:-melis}-php
     # On Linux, let Xdebug reach your IDE on the host (no-op on macOS/Windows):
     extra_hosts:
@@ -95,11 +102,8 @@ services:
     image: node:${NODE_VERSION:-22}-alpine
     container_name: ${MELIS_CONTAINER_NAME:-melis}-vite
     working_dir: /var/www/${APP_NAME:-melis}/vendor/melisplatform/melis-core/ui-react
-    # If the sources aren't there yet, EXIT (don't loop): on first boot the React
-    # enablement REPLACES vendor/melisplatform/melis-core after this container has
-    # started, which orphans a working directory or node_modules volume mounted on
-    # the old directory. Exiting lets `restart: unless-stopped` bring us back onto
-    # the fresh one. Expect a few restarts while the skeleton downloads.
+    # If the sources aren't there yet, EXIT rather than loop in place — see the
+    # depends_on note below for why that alone isn't enough.
     command: >
       sh -c "A=/var/www/${APP_NAME:-melis}/vendor/melisplatform/melis-core/ui-react;
              if [ ! -f $$A/package.json ]; then
@@ -119,11 +123,27 @@ services:
       # Present a port-less Host header to Melis — its domain routing redirect-loops
       # when the Host carries a port (vite.config.ts honours MELIS_PROXY_HOST).
       MELIS_PROXY_HOST: localhost
+    # Wait for php to be HEALTHY, not merely started. On first boot the entrypoint
+    # bootstraps the skeleton and the React enablement REPLACES
+    # vendor/melisplatform/melis-core — and Apache (hence the healthcheck) only comes
+    # up afterwards. Starting earlier means this container's node_modules volume
+    # mounts onto the melis-core directory that is about to be deleted; its mount
+    # namespace then keeps resolving to that orphaned directory, where package.json
+    # never appears (observed: vite sees ONLY ui-react/node_modules while php sees
+    # the real package). A `restart:` does NOT recover — the namespace is reused,
+    # only re-creating the container rebuilds it. So don't start early.
     depends_on:
-      - php
+      php:
+        condition: service_healthy
     networks:
       - melis
     restart: unless-stopped
+
+# Build-time only (see the php service's build.secrets): never mounted into a
+# running container, never written to an image layer.
+secrets:
+  github_token:
+    environment: GITHUB_TOKEN
 
 networks:
   melis:

@@ -16,6 +16,9 @@ services:
     #     TZ: ${TZ:-Europe/Paris}
     #     PHP_VERSION: ${PHP_VERSION:-8.3}   # 8.3 (default) | 8.4 (experimental). 8.5 not usable yet.
     #     WITH_REACT: ${WITH_REACT:-1}       # bake the React back-office (/melis-react)
+    #   secrets: [github_token]              # + uncomment the top-level secrets: block
+    #                                        #   below; needed or the React step hits
+    #                                        #   the 60 req/h GitHub API limit.
     container_name: ${MELIS_CONTAINER_NAME:-melis}-php
     depends_on:
       db:
@@ -85,6 +88,12 @@ services:
     networks:
       - melis
     restart: always
+
+# Build-time only, for the commented-out build: block above (this stack pulls the
+# published image by default, so nothing here is used unless you build locally).
+# secrets:
+#   github_token:
+#     environment: GITHUB_TOKEN
 
 networks:
   melis:

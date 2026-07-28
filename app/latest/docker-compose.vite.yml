@@ -1,0 +1,54 @@
+# Opt-in: Vite dev server for hacking on the React back-office source with HMR.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.vite.yml up -d
+#   make up VITE=1 STACK=app/latest
+#   # → http://localhost:5173   (HMR; proxies /melis, /assets, /Melis* to php)
+#
+# Requires WITH_REACT=1 in .env — without it melis-core is the stable release, which
+# has no ui-react/ source, and this service just retries forever.
+#
+# NOT needed to USE /melis-react: that is served by PHP from melis-core's COMMITTED
+# production build (public/ui-react/). After editing the source, `npm run build`
+# regenerates it — that's what production serves.
+services:
+  vite:
+    image: node:${NODE_VERSION:-22}-alpine
+    container_name: ${MELIS_CONTAINER_NAME}-vite
+    working_dir: /var/www/${APP_NAME}/vendor/melisplatform/melis-core/ui-react
+    # If the sources aren't there yet, EXIT rather than loop in place — see the
+    # depends_on note below for why an in-place wait cannot recover.
+    command: >
+      sh -c "A=/var/www/${APP_NAME}/vendor/melisplatform/melis-core/ui-react;
+             if [ ! -f $$A/package.json ]; then
+               echo '[vite] melis-core/ui-react not present yet (is WITH_REACT=1?) — retrying...';
+               sleep 10; exit 0;
+             fi;
+             cd $$A && npm ci --no-audit --no-fund && exec npm run dev -- --host 0.0.0.0"
+    ports:
+      - "${VITE_PORT:-5173}:5173"
+    volumes:
+      # Same host bind mount as php — this stack's code lives on your machine.
+      - ../../../:/var/www/${APP_NAME}
+      # Keep node_modules off the host bind mount (faster installs, no host clutter).
+      - vite_node_modules:/var/www/${APP_NAME}/vendor/melisplatform/melis-core/ui-react/node_modules
+    environment:
+      # Vite proxies backend calls (auth, react-api, module assets) to Apache.
+      MELIS_TARGET: http://php
+      # Present a port-less Host header to Melis — its domain routing redirect-loops
+      # when the Host carries a port (vite.config.ts honours MELIS_PROXY_HOST).
+      MELIS_PROXY_HOST: localhost
+    # Wait for php to be HEALTHY, not merely started: the entrypoint's React
+    # enablement REPLACES vendor/melisplatform/melis-core, and this container's
+    # node_modules volume would then pin the deleted directory in its mount
+    # namespace (package.json never appears). A `restart:` does not recover from
+    # that — only re-creating the container does.
+    depends_on:
+      php:
+        condition: service_healthy
+    networks:
+      - melis
+    restart: unless-stopped
+
+volumes:
+  vite_node_modules:
+    name: ${MELIS_CONTAINER_NAME}-vite-node-modules

@@ -15,11 +15,8 @@ services:
     image: node:22-alpine
     container_name: ${MELIS_CONTAINER_NAME:-melis}-vite
     working_dir: /var/www/${APP_NAME:-melis}/vendor/melisplatform/melis-core/ui-react
-    # If the sources aren't there yet, EXIT (don't loop): a defensive re-enable can
-    # REPLACE vendor/melisplatform/melis-core after this container starts, which
-    # orphans any working directory / node_modules volume mounted on the old
-    # directory. Exiting lets Docker restart the container (restart: unless-stopped)
-    # so cwd and the volume re-mount onto the fresh directory.
+    # If the sources aren't there yet, EXIT rather than loop in place — see the
+    # depends_on note below for why that alone isn't enough.
     command: >
       sh -c "A=/var/www/${APP_NAME:-melis}/vendor/melisplatform/melis-core/ui-react;
              if [ ! -f $$A/package.json ]; then
@@ -39,8 +36,14 @@ services:
       # Present a port-less Host header to Melis — its domain routing redirect-loops
       # when the Host carries a port (vite.config.ts honours MELIS_PROXY_HOST).
       MELIS_PROXY_HOST: localhost
+    # Wait for php to be HEALTHY, not merely started: the entrypoint's defensive
+    # re-enable can REPLACE vendor/melisplatform/melis-core, and this container's
+    # node_modules volume would then pin the deleted directory in its mount
+    # namespace (package.json never appears). A `restart:` does not recover from
+    # that — only re-creating the container does.
     depends_on:
-      - php
+      php:
+        condition: service_healthy
     networks:
       - melis
     restart: unless-stopped
