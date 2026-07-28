@@ -12,7 +12,7 @@ with the **new React back-office enabled by default**: on top of the classic bac
 | **Pre-built image** | Pull a ready-to-run Melis (no build) + MySQL, finish via the web installer | Fastest evaluation / "just run it" | [`prebuilt/`](prebuilt/) |
 | **Turnkey build** | Builds a fresh Melis skeleton on your host, editable code in `./melis`, + MySQL | Developers who want the code locally | [`install/`](install/) |
 | **nginx + PHP-FPM** | Production-style stack (nginx front, PHP-FPM, MySQL), skeleton baked into the image | A more production-like topology | [`fpm/`](fpm/) |
-| **Mount existing project** | Mounts an existing Melis project into a PHP-apache build (React BO opt-in) | Projects you already have locally | [`app/latest/`](app/latest/) |
+| **Mount existing project** | Mounts an existing Melis project into a PHP-apache build (enabling React rewrites *your* composer.json — commit first) | Projects you already have locally | [`app/latest/`](app/latest/) |
 | **Dev base images** | Per-PHP-version base images only (Apache or FPM, PHP 8.1–8.5) | Building your own images | [`dev/`](dev/) |
 
 > All paths finish the same way: the **native Melis web installer** at
@@ -63,25 +63,28 @@ Unlike the other paths, this one does **not** create a Melis project — it moun
 you already have. `docker-compose.yml` mounts `../../../`, which is the directory
 *containing* this repo, so clone it **inside your Melis project root**:
 
+> ⚠ **Commit your project first.** Like every other path, this one enables the React
+> back-office by default (`WITH_REACT=1`) — but here the application directory is
+> *your* existing project, so the first boot rewrites your **`composer.json`,
+> `composer.lock` and `config/application.config.php` on the host**. Commit (or
+> stash) beforehand so you can diff and revert. Prefer a plain legacy Melis? Set
+> `WITH_REACT=0` in `.env` before the first `up` and your project is left untouched.
+
 ```bash
 # 1. clone into your Melis project root (not the other way round)
 cd /path/to/my-melis-project
+git status                       # commit/stash first — see the warning above
 git clone https://github.com/melisplatform/melis-docker-react.git melis-docker-react
 
 # 2. configure
 cd melis-docker-react/app/latest
 cp .env.example .env
-#    edit APP_NAME + DB creds to match your project
+#    edit APP_NAME + DB creds to match your project, and set
+#    GITHUB_TOKEN=ghp_...   (the React step resolves 3 GitHub repos)
+#    WITH_REACT=0           (only if you do NOT want the React back-office)
 
-# 3. optional but recommended: boot once with WITH_REACT=0 (the default)
-docker compose up -d --build     # confirms the mount + DB work
-
-# 4. OPTIONAL — enable the React back-office.
-#    Make sure your project is committed first: this step rewrites your
-#    composer.json, composer.lock and config/application.config.php.
-#    Then edit .env by hand:   WITH_REACT=1
-#                              GITHUB_TOKEN=ghp_...   (scope: repo)
-docker compose up -d
+# 3. build + start
+docker compose up -d --build
 ```
 
 Before committing, add these to your **project's** `.gitignore` — the stack creates
@@ -93,13 +96,13 @@ auth.json              # written by the guard; contains your GITHUB_TOKEN
 data/logs/             # installer log
 ```
 
-Step 4 is the React back-office, and it is **opt-in on this path only**: the
-application directory is *your* existing project, so enabling it rewrites your
-`composer.json`, `composer.lock` and `config/application.config.php` on the host —
-hence the commit first. `GITHUB_TOKEN` needs the **`repo` scope** here
-(`melis-react-api` and `melis-react-override` are private repositories). The step is
-idempotent and never fatal: if it fails you keep the legacy back-office and can retry
-by restarting the container. `/melis-react` goes live once the platform is installed.
+The React step is idempotent and never fatal: if it fails you keep the legacy
+back-office and can retry by restarting the container. `/melis-react` goes live once
+the platform is installed. The build pre-warms Composer's metadata cache (pass your
+token as a build secret to make that work: `GITHUB_TOKEN=ghp_xxx docker build
+--secret id=github_token,env=GITHUB_TOKEN .`), without which the first boot spends
+~12 minutes resolving repositories before Apache starts — during which the port
+answers with an empty response.
 
 > **Windows:** a `start-docker.bat` helper is provided at the repo root for this path.
 >

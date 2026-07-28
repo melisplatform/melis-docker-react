@@ -122,6 +122,43 @@ RUN mkdir -p /var/www/${APP_NAME}/config \
     && a2dissite 000-default.conf \
     && a2ensite vhost.conf
 
+# --- Pre-warm the Composer metadata cache ---
+# This stack bakes no application (the project is bind-mounted at runtime), so
+# /composer/cache would ship EMPTY: the entrypoint's React enablement and the web
+# installer's module step would each re-enumerate every GitHub `vcs` repository
+# through the API — ~12 min before Apache even starts, during which the published
+# port answers with an empty response.
+# So resolve the graph here in a throwaway dir: --no-install fetches METADATA only,
+# which is the expensive part (~7 MB; package archives are seconds). The cache is
+# keyed per repository URL, so it serves any project mounted later, not just this
+# resolve. Optional token, to stay off the 60 req/h unauthenticated limit:
+#   GITHUB_TOKEN=ghp_xxx docker build --secret id=github_token,env=GITHUB_TOKEN .
+# Never fatal — a failed pre-warm only means a slower first boot.
+ARG WITH_REACT=1
+RUN --mount=type=secret,id=github_token \
+    export COMPOSER_ALLOW_SUPERUSER=1 \
+    && GITHUB_TOKEN="$(cat /run/secrets/github_token 2>/dev/null || true)" \
+    && if [ -n "$GITHUB_TOKEN" ]; then \
+         export COMPOSER_AUTH="{\"github-oauth\":{\"github.com\":\"${GITHUB_TOKEN}\"}}" ; \
+       fi \
+    && ( mkdir -p /tmp/warm && cd /tmp/warm \
+         && composer create-project melisplatform/melis-platform-skeleton . \
+              --no-interaction --no-progress --no-install --no-scripts \
+         && if [ "$WITH_REACT" = "1" ]; then \
+              composer config repositories.melis-core           vcs https://github.com/melisplatform/melis-core \
+              && composer config repositories.melis-react-api      vcs https://github.com/melisplatform/melis-react-api \
+              && composer config repositories.melis-react-override vcs https://github.com/melisplatform/melis-react-override \
+              && composer require --no-update --no-interaction --no-scripts \
+                   "melisplatform/melis-core:dev-melis-react as 5.3.999" \
+                   "melisplatform/melis-react-api:dev-melis-react" \
+                   "melisplatform/melis-react-override:dev-melis-react" ; \
+            fi \
+         && composer update --dry-run --no-interaction --no-scripts --no-progress ) \
+       || echo "[melis-docker] WARNING: Composer cache pre-warm incomplete — the first boot will be slower." \
+    ; rm -rf /tmp/warm \
+    && chown -R www-data:www-data /composer \
+    && du -sh /composer/cache
+
 COPY ./entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 

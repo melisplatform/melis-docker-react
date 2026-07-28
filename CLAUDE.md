@@ -93,11 +93,15 @@ Where it runs: `install/` → entrypoint step 2b on first boot (`WITH_REACT=1`
 default, in `.env`); `prebuilt/`+`fpm/` → Dockerfile right after the skeleton bake
 (`ARG WITH_REACT=1`; GitHub token via BuildKit secret `github_token`, not a build
 arg) + a defensive entrypoint re-run for app volumes seeded from pre-React images;
-`app/latest/` → entrypoint step 2, but **`WITH_REACT=0` by default** — that stack's
-app dir is the user's own pre-existing project (bind-mounted from `../../../`), so
-enabling React rewrites *their* `composer.json`/`composer.lock`/
-`application.config.php` on the host. It is opt-in per `.env`, never baked (nothing
-is baked there — the image is runtime-only).
+`app/latest/` → entrypoint step 2, **`WITH_REACT=1` by default** like the others
+(changed 2026-07-28 on request; it was `0`). Mind what that means there: the app dir
+is the user's own pre-existing project (bind-mounted from `../../../`), so the first
+boot rewrites *their* `composer.json`/`composer.lock`/`application.config.php` on the
+host — the README and `.env.example` tell them to commit first, and `WITH_REACT=0`
+opts out. Nothing is baked there (the image is runtime-only), but its Dockerfile
+does run the same **cache pre-warm** as `install/`, for the same reason: without it
+the entrypoint's React enablement resolves cold and Apache doesn't start for ~12 min,
+during which the published port returns an empty response (observed).
 
 **Two of the three React repos are PRIVATE** (`melis-react-api`,
 `melis-react-override`; `melis-core` is public). `GITHUB_TOKEN` therefore needs the

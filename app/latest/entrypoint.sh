@@ -4,7 +4,7 @@
 # UNLIKE install/entrypoint.sh this NEVER creates a project: this stack mounts an
 # EXISTING Melis project from the host (../../../ → /var/www/$APP_NAME). It only:
 #   - optionally installs vendor/ if the mounted project has none;
-#   - optionally enables the React back-office (WITH_REACT=1, OFF by default here);
+#   - enables the React back-office (WITH_REACT=1 by default; set 0 to opt out);
 #   - waits for MySQL (via PHP/mysqli — the MariaDB CLI client rejects MySQL 8.x TLS);
 #   - fixes up the few dirs Melis must write to.
 # DB schema / admin user / demo site stay the job of the Melis web installer.
@@ -33,13 +33,13 @@ if [ -f composer.json ] && [ ! -d vendor ]; then
     echo "[melis-docker] WARNING: composer install failed — see the errors above."
 fi
 
-# 2) React back-office (/melis-react). OFF by default in this stack: unlike
-#    install/ (whose ./melis skeleton we generated ourselves), the app dir here is
-#    YOUR pre-existing project, and enabling React rewrites its composer.json,
-#    composer.lock and config/application.config.php on the host. Opt in with
-#    WITH_REACT=1 in .env once you're happy for that to happen (commit first).
+# 2) React back-office (/melis-react). ON by default, like every other stack.
+#    ⚠ Mind what that means HERE specifically: unlike install/ (whose ./melis
+#    skeleton we generated ourselves), the app dir is YOUR pre-existing project, so
+#    this rewrites its composer.json, composer.lock and config/application.config.php
+#    ON THE HOST. Commit your work before the first boot, or set WITH_REACT=0 in .env.
 #    Idempotent, and never fatal: a failure leaves the legacy back-office working.
-if [ "${WITH_REACT:-0}" = "1" ] && [ -f composer.json ]; then
+if [ "${WITH_REACT:-1}" = "1" ] && [ -f composer.json ]; then
   bash /melis-conf/enable-react.sh "$APP_DIR" \
     || echo "[melis-docker] WARNING: React enablement failed — continuing with the legacy back-office only. See the errors above, then restart the container to retry."
 fi
@@ -114,7 +114,7 @@ echo "[melis-docker] ===========================================================
 echo "[melis-docker]  Melis (app/latest) is ready. Open http://localhost:${HOST_PORT:-8080}"
 echo "[melis-docker]  DB to enter in the wizard:  host=${DB_HOST}  db=${DB_NAME}"
 echo "[melis-docker]                              user=${DB_USER}  pass=${DB_PASS}"
-if [ "${WITH_REACT:-0}" = "1" ]; then
+if [ "${WITH_REACT:-1}" = "1" ]; then
   echo "[melis-docker]  React back-office: http://localhost:${HOST_PORT:-8080}/melis-react"
 else
   echo "[melis-docker]  React back-office: disabled (set WITH_REACT=1 in .env to enable)"

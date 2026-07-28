@@ -36,11 +36,11 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       HOST_PORT: ${HOST_PORT:-8080}
-      # React back-office (/melis-react). OFF by default in THIS stack only: the app
-      # dir is your own pre-existing project (bind-mounted from ../../../), and
-      # enabling React rewrites its composer.json / composer.lock /
-      # config/application.config.php on the host. Set WITH_REACT=1 in .env to opt in.
-      WITH_REACT: ${WITH_REACT:-0}
+      # React back-office (/melis-react), on by default like every other stack.
+      # ⚠ HERE the app dir is your own pre-existing project (bind-mounted from
+      # ../../../), so the first boot rewrites its composer.json / composer.lock /
+      # config/application.config.php ON THE HOST. Commit first, or set WITH_REACT=0.
+      WITH_REACT: ${WITH_REACT:-1}
       # Lifts Composer off the 60/hour unauthenticated GitHub API limit that
       # otherwise breaks the web installer's module step — and the React enablement
       # (3 more GitHub vcs repos). See .env.example.
