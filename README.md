@@ -98,11 +98,16 @@ data/logs/             # installer log
 
 The React step is idempotent and never fatal: if it fails you keep the legacy
 back-office and can retry by restarting the container. `/melis-react` goes live once
-the platform is installed. The build pre-warms Composer's metadata cache (pass your
-token as a build secret to make that work: `GITHUB_TOKEN=ghp_xxx docker build
---secret id=github_token,env=GITHUB_TOKEN .`), without which the first boot spends
-~12 minutes resolving repositories before Apache starts — during which the port
-answers with an empty response.
+the platform is installed.
+
+> **Set `GITHUB_TOKEN` in `.env` *before* the first build.** The build pre-warms
+> Composer's metadata cache, and Compose passes the token to it as a build secret
+> (never baked into a layer). Unauthenticated, that pre-warm hits GitHub's 60
+> requests/hour limit and gives up — the build still succeeds, but the **first boot
+> then spends ~12 minutes** resolving repositories before Apache starts, and
+> `http://localhost:8080` returns an empty page the whole time. Watch the build for
+> `7.2M /composer/cache`; `WARNING: Composer cache pre-warm incomplete` means the
+> token didn't arrive.
 
 > **Windows:** a `start-docker.bat` helper is provided at the repo root for this path.
 >

@@ -14,6 +14,15 @@ services:
         - PHP_VERSION=${PHP_VERSION:-8.3}
         - MELIS_PLATFORM=${MELIS_PLATFORM}
         - MELIS_MODULE=${MELIS_MODULE}
+        - WITH_REACT=${WITH_REACT:-1}
+      # Hands GITHUB_TOKEN to the Dockerfile's Composer cache pre-warm WITHOUT baking
+      # it into a layer. Compose reads it from .env — no need to export it first
+      # (verified). Miss this and the pre-warm runs unauthenticated, hits GitHub's
+      # 60 req/hour limit and gives up: the build still succeeds, but the first boot
+      # then spends ~12 min resolving repositories before Apache starts, and the
+      # published port answers with an empty response the whole time.
+      secrets:
+        - github_token
       x-bake:
         cache-from: ["type=local,src=/tmp/.buildx-cache"]
         cache-to: ["type=local,dest=/tmp/.buildx-cache"]
@@ -83,6 +92,13 @@ services:
       retries: 5
     networks:
       - melis
+
+# Build-time only (see the php service's build.secrets): never mounted into a
+# running container, never written to an image layer. Sourced from GITHUB_TOKEN in
+# .env — Compose resolves it there, so exporting it in your shell is not required.
+secrets:
+  github_token:
+    environment: GITHUB_TOKEN
 
 networks:
   melis:
