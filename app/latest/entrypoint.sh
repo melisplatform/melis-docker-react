@@ -84,6 +84,10 @@ DB_HOST="$DB_HOST" DB_USER="$DB_USER" DB_PASS="$DB_PASS" DB_NAME="$DB_NAME" php 
 #    that made this fix necessary. Only the directories are chowned, not their
 #    contents (`-R` is reserved for the small config trees Melis rewrites wholesale):
 #    the wizard tests the directory, and files created later inherit www-data anyway.
+#
+#    NOT ENOUGH ON ITS OWN if you intend to run the web installer: it also rewrites
+#    composer.json/composer.lock, installs modules into vendor/, and the guard writes
+#    auth.json in the project ROOT. Step 5b below covers those.
 mkdir -p \
     "$APP_DIR/config/autoload/platforms" \
     "$APP_DIR/cache" \
@@ -109,6 +113,32 @@ for d in data dbdeploy dbdeploy/data public "etc/bundles" test thirdparty \
     chown www-data:www-data "$APP_DIR/$d" 2>/dev/null || true
     chmod 775 "$APP_DIR/$d" 2>/dev/null || true
 done
+
+# 5b) Make the project writable by Apache so the WEB INSTALLER can run. It rewrites
+#     composer.json/composer.lock, composer-installs modules into vendor/, and the
+#     guard writes auth.json in the project root — all as www-data. A checkout owned
+#     by your user (uid 1000, mode 755) blocks every one of those, and the wizard
+#     dies with "./composer.json is not writable" and then "could not read Username
+#     for 'https://github.com'" (no auth.json → unauthenticated GitHub → git driver).
+#
+#     Note this CANNOT be done in the Dockerfile: docker-compose bind-mounts your
+#     project over the app dir at runtime, masking any ownership baked into the image.
+#
+#     ⚠ It is a real, permanent ownership change on your host working copy — you may
+#     need sudo to edit your files afterwards (`sudo chown -R $(id -u):$(id -g) .`
+#     reverses it, until the next boot re-applies this).
+#
+#     The guard below is only an optimisation (skip the walk when it is already
+#     correct), not an opt-out: without this the installer cannot run at all.
+if ! su -s /bin/sh www-data -c \
+     "test -w '$APP_DIR' && test -w '$APP_DIR/composer.json' && test -w '$APP_DIR/vendor'" 2>/dev/null; then
+  echo "[melis-docker] Making the mounted project writable by www-data (needed by the web installer)."
+  # Skip this repo itself — it is cloned INSIDE your project (that is how the
+  # ../../../ bind mount finds it), Melis never writes to it, and chowning it
+  # would mean needing sudo just to edit .env or docker-compose.yml.
+  find "$APP_DIR" \( -name 'melis-docker' -o -name 'melis-docker-react' \) -prune \
+      -o -exec chown www-data:www-data {} + 2>/dev/null || true
+fi
 
 echo "[melis-docker] ============================================================"
 echo "[melis-docker]  Melis (app/latest) is ready. Open http://localhost:${HOST_PORT:-8080}"
