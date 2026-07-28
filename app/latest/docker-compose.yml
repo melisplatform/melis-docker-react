@@ -57,8 +57,11 @@ services:
       - melis_mysql_data:/var/lib/mysql
     restart: always
     ports:
-      # Bound to localhost only (DB not exposed on the LAN)
-      - 127.0.0.1:33061:${MYSQL_PORT}
+      # Bound to localhost only (DB not exposed on the LAN). Overridable like every
+      # other stack — change DB_HOST_PORT in .env to run this alongside one of them.
+      # host:container. The container side is always 3306 (where MySQL listens);
+      # only the host side is yours to choose. Same form as the other three stacks.
+      - "127.0.0.1:${DB_HOST_PORT:-33061}:3306"
     environment:
       MYSQL_HOSTNAME: ${MELIS_CONTAINER_NAME}-db
       MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}

@@ -77,9 +77,38 @@ DB_HOST="$DB_HOST" DB_USER="$DB_USER" DB_PASS="$DB_PASS" DB_NAME="$DB_NAME" php 
 # 5) Permissions. Deliberately NOT a `chown -R` of the whole app dir: that dir is a
 #    bind mount of your host working copy, and on Linux the ownership change is real
 #    and permanent on the host. Only the paths Melis actually writes to are touched.
-mkdir -p "$APP_DIR/config" "$APP_DIR/cache" "$APP_DIR/mnt/public/media" 2>/dev/null || true
-chown -R www-data:www-data "$APP_DIR/config" "$APP_DIR/cache" "$APP_DIR/mnt" 2>/dev/null || true
+#
+#    This list is exactly what the wizard's "Step 1.3: File system rights" checks.
+#    A checkout cloned by your own user is mode 755 and owned by you, so Apache
+#    (www-data, uid 33) gets r-x only and every one of these reports ✗ — the step
+#    that made this fix necessary. Only the directories are chowned, not their
+#    contents (`-R` is reserved for the small config trees Melis rewrites wholesale):
+#    the wizard tests the directory, and files created later inherit www-data anyway.
+mkdir -p \
+    "$APP_DIR/config/autoload/platforms" \
+    "$APP_DIR/cache" \
+    "$APP_DIR/mnt/public/media" \
+    "$APP_DIR/data" \
+    "$APP_DIR/dbdeploy/data" \
+    "$APP_DIR/public" \
+    "$APP_DIR/etc/bundles" \
+    "$APP_DIR/test" \
+    "$APP_DIR/thirdparty" \
+    "$APP_DIR/module/MelisSites" \
+    "$APP_DIR/module/MelisModuleConfig/config" \
+    "$APP_DIR/module/MelisModuleConfig/languages" \
+    2>/dev/null || true
+# Melis rewrites these wholesale → recurse.
+chown -R www-data:www-data \
+    "$APP_DIR/config" "$APP_DIR/cache" "$APP_DIR/mnt" \
+    "$APP_DIR/module/MelisModuleConfig" 2>/dev/null || true
 chmod -R 775 "$APP_DIR/config" "$APP_DIR/cache" 2>/dev/null || true
+# Directory itself only — never touch the user's files underneath.
+for d in data dbdeploy dbdeploy/data public "etc/bundles" test thirdparty \
+         "module" "module/MelisSites"; do
+    chown www-data:www-data "$APP_DIR/$d" 2>/dev/null || true
+    chmod 775 "$APP_DIR/$d" 2>/dev/null || true
+done
 
 echo "[melis-docker] ============================================================"
 echo "[melis-docker]  Melis (app/latest) is ready. Open http://localhost:${HOST_PORT:-8080}"
