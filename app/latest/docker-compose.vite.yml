@@ -30,8 +30,9 @@ services:
     # a restart-looping container gets handed a DEGENERATE staging dir: /var/www/melis
     # then contains only an empty path skeleton, package.json is never found and it
     # loops forever (observed: RestartCount 35, host tree perfectly intact). Staying
-    # alive keeps the mount we booted with. `restart: unless-stopped` remains as a
-    # crash net only.
+    # alive keeps the mount we booted with — which is also why this service runs with
+    # `restart: "no"` (see below): a restart never re-stages the bind, it only loses
+    # it. (prebuilt/ and fpm/ keep their policy: their vite mounts a NAMED volume.)
     command: >
       sh -c "A=/var/www/${APP_NAME}/vendor/melisplatform/melis-core/ui-react;
              while :; do
@@ -81,4 +82,7 @@ services:
         condition: service_healthy
     networks:
       - melis
-    restart: unless-stopped
+    # See the php service: a restart policy on a service that host-binds the app dir
+    # hands the container back an empty staging dir after a WSL/Rancher restart. The
+    # supervisor loop above is the crash net instead — it never exits.
+    restart: "no"
