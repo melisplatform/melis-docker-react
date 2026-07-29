@@ -37,7 +37,12 @@ export COMPOSER_ALLOW_SUPERUSER=1
 
 # GitHub token: passed to Composer via COMPOSER_AUTH (environment only — never
 # written to disk, so it cannot leak into an image layer or the app volume).
-if [ -n "${GITHUB_TOKEN:-}" ]; then
+# Strip any surrounding whitespace/CR first: .env files edited on Windows carry
+# CRLF line endings, and a stray \r inside the JSON string makes Composer reject
+# COMPOSER_AUTH with "environment variable is malformed, should be a valid JSON
+# object" — which fails the whole require. (Observed on a CRLF prebuilt/.env.)
+GITHUB_TOKEN="$(printf '%s' "${GITHUB_TOKEN:-}" | tr -d '[:space:]')"
+if [ -n "${GITHUB_TOKEN}" ]; then
     export COMPOSER_AUTH="{\"github-oauth\":{\"github.com\":\"${GITHUB_TOKEN}\"}}"
 else
     echo "[melis-docker-react] WARNING: no GITHUB_TOKEN set — this step will almost certainly"

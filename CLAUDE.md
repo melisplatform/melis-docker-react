@@ -113,7 +113,9 @@ require dies with `fatal: could not read Username for 'https://github.com'`. The
 
 **Vite dev server**: a `node:${NODE_VERSION:-22}-alpine` service on
 `${VITE_PORT:-5173}` running `npm ci && npm run dev` in
-`vendor/melisplatform/melis-core/ui-react` (`node_modules` in its own named volume).
+`vendor/melisplatform/melis-core/ui-react`. `node_modules` deliberately lives in the
+app tree itself (bind mount / `melis_app`) — **never in its own named volume**, see
+the vite gotcha below.
 `MELIS_TARGET=http://php` (`http://web` for fpm — its php service is FPM-only) and
 `MELIS_PROXY_HOST=localhost` (Melis' domain routing redirect-loops when the proxied
 Host header carries a port).
@@ -174,11 +176,30 @@ React-specific gotchas (each cost a debugging round — respect them):
   fails the whole require. Nothing is lost: the wizard's own Composer runs and its
   dbdeploy pass publish + apply all schema deltas during the install.
   (`create-project` never fires `post-update-cmd`, which is why vanilla boots fine.)
-- **The vite service must EXIT (not loop) while waiting for `ui-react/`** and be
-  restarted by its `restart:` policy: the React enablement REPLACES
-  `vendor/melisplatform/melis-core` after the container starts, orphaning a cwd or
-  `node_modules` volume mounted on the old directory — an in-place wait loop then
-  never sees `package.json` and hangs forever.
+- **Never mount a named volume at `ui-react/node_modules`, and never make the vite
+  service exit/restart to recover.** (Reversed 2026-07-29 — the old rule was the
+  opposite and was wrong; it cost this bug twice.) Composer REPLACES
+  `vendor/melisplatform/melis-core` every time it touches the package: first boot
+  (`enable-react.sh`), the **web installer's own `composer update` — long after php
+  is healthy, which is why `depends_on: service_healthy` cannot prevent this** — and
+  any later require/update. Two consequences:
+  - A volume mounted *inside* that directory pins the deleted inode in the vite
+    container's mount namespace. The path then resolves to the new directory with
+    **no `node_modules` at all**, and vite serves `Cannot find module
+    .../vite/dist/node/chunks/dist.js` forever. Only re-creating the container fixes
+    it. So `node_modules` lives in the app tree (bind mount / `melis_app`) — nothing
+    is mounted there, so a Composer wipe merely deletes it.
+  - Recovery is an **in-place supervisor loop** in the service `command`: a watchdog
+    polls the ABSOLUTE `node_modules/vite/package.json` (the cwd is a deleted inode
+    by then), kills vite, re-runs `cd $A` onto the new directory, `npm ci`s and
+    restarts it — container untouched. Do **not** `exit` and lean on `restart:`: on
+    Rancher Desktop/WSL each restart re-stages the bind mount and a restart-looping
+    container gets a **degenerate staging dir** (`/var/www/melis` holding only an
+    empty path skeleton while the host tree is intact) → infinite loop, observed at
+    `RestartCount 35`. `restart: unless-stopped` stays as a crash net only.
+  - `npm ci` is skipped when `node_modules/.package-lock.json` is present, newer than
+    `package-lock.json`, **and** `node_modules/vite/package.json` exists — that last
+    clause is what makes a partial wipe heal instead of being declared fresh.
 - **fpm nginx**: the static-asset `location` must fall back to `/index.php`, not
   `=404` — module assets (legacy `/MelisXxx/...` AND `/MelisCore/ui-react/*`) live
   in `vendor/`, not under `public/`, and are streamed by MelisAssetManager via PHP.

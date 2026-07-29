@@ -15,22 +15,57 @@ services:
     image: node:${NODE_VERSION:-22}-alpine
     container_name: ${MELIS_CONTAINER_NAME}-vite
     working_dir: /var/www/${APP_NAME}/vendor/melisplatform/melis-core/ui-react
-    # If the sources aren't there yet, EXIT rather than loop in place — see the
-    # depends_on note below for why an in-place wait cannot recover.
+    # Supervisor loop — NEVER exits, NEVER relies on a container restart.
+    #
+    # Composer REPLACES vendor/melisplatform/melis-core whenever it touches the
+    # package: on first boot (enable-react.sh), during the web installer's own
+    # `composer update`, and on any later require/update. That deletes node_modules
+    # under the running vite, which from then on serves broken module resolution
+    # ("Cannot find module .../vite/dist/node/chunks/dist.js"). The watchdog polls
+    # the ABSOLUTE path (our cwd is by then a deleted inode), kills vite, re-runs
+    # `cd $A` to pick up the NEW directory, reinstalls and restarts it in place.
+    #
+    # Why in place and not `exit` + `restart:`? On Rancher Desktop/WSL every restart
+    # re-stages the bind mount under /mnt/wsl/rancher-desktop/run/docker-mounts, and
+    # a restart-looping container gets handed a DEGENERATE staging dir: /var/www/melis
+    # then contains only an empty path skeleton, package.json is never found and it
+    # loops forever (observed: RestartCount 35, host tree perfectly intact). Staying
+    # alive keeps the mount we booted with. `restart: unless-stopped` remains as a
+    # crash net only.
     command: >
       sh -c "A=/var/www/${APP_NAME}/vendor/melisplatform/melis-core/ui-react;
-             if [ ! -f $$A/package.json ]; then
-               echo '[vite] melis-core/ui-react not present yet (is WITH_REACT=1?) — retrying...';
-               sleep 10; exit 0;
-             fi;
-             cd $$A && npm ci --no-audit --no-fund && exec npm run dev -- --host 0.0.0.0"
+             while :; do
+               if [ ! -f $$A/package.json ]; then
+                 echo '[vite] melis-core/ui-react not present yet (is WITH_REACT=1?) — waiting...'; sleep 10; continue;
+               fi;
+               cd $$A || { sleep 10; continue; };
+               if [ ! -f node_modules/.package-lock.json ] || [ ! -f node_modules/vite/package.json ] ||
+                  [ package-lock.json -nt node_modules/.package-lock.json ]; then
+                 npm ci --no-audit --no-fund || { echo '[vite] npm ci failed — retrying in 15s'; sleep 15; continue; };
+                 chown -R 33:33 node_modules;
+               fi;
+               npm run dev -- --host 0.0.0.0 & V=$$!;
+               while kill -0 $$V 2>/dev/null; do
+                 sleep 15;
+                 if [ ! -f $$A/node_modules/vite/package.json ]; then
+                   echo '[vite] melis-core was replaced by Composer — reinstalling deps in place';
+                   kill $$V 2>/dev/null; break;
+                 fi;
+               done;
+               wait $$V 2>/dev/null;
+             done"
     ports:
       - "${VITE_PORT:-5173}:5173"
     volumes:
       # Same host bind mount as php — this stack's code lives on your machine.
       - ../../../:/var/www/${APP_NAME}
-      # Keep node_modules off the host bind mount (faster installs, no host clutter).
-      - vite_node_modules:/var/www/${APP_NAME}/vendor/melisplatform/melis-core/ui-react/node_modules
+      # NO named volume for node_modules — deliberately. Mounting one INSIDE
+      # melis-core (a directory Composer deletes and recreates) pins the old inode
+      # in this container's mount namespace: the path then resolves to the new
+      # directory with no node_modules at all, and only re-creating the container
+      # fixes it. Keeping node_modules in the bind mount means there is nothing to
+      # orphan — a Composer wipe just deletes it, and the supervisor above reinstalls.
+      # (It lands in YOUR project tree, under vendor/, which is git-ignored.)
     environment:
       # Vite proxies backend calls (auth, react-api, module assets) to Apache.
       MELIS_TARGET: http://php
@@ -38,17 +73,12 @@ services:
       # when the Host carries a port (vite.config.ts honours MELIS_PROXY_HOST).
       MELIS_PROXY_HOST: localhost
     # Wait for php to be HEALTHY, not merely started: the entrypoint's React
-    # enablement REPLACES vendor/melisplatform/melis-core, and this container's
-    # node_modules volume would then pin the deleted directory in its mount
-    # namespace (package.json never appears). A `restart:` does not recover from
-    # that — only re-creating the container does.
+    # enablement replaces vendor/melisplatform/melis-core before Apache comes up, so
+    # starting earlier just burns an `npm ci` on a tree about to be deleted. An
+    # optimisation, not the fix — see the command/volumes notes above.
     depends_on:
       php:
         condition: service_healthy
     networks:
       - melis
     restart: unless-stopped
-
-volumes:
-  vite_node_modules:
-    name: ${MELIS_CONTAINER_NAME}-vite-node-modules
