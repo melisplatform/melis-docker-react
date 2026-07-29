@@ -100,14 +100,9 @@ The React step is idempotent and never fatal: if it fails you keep the legacy
 back-office and can retry by restarting the container. `/melis-react` goes live once
 the platform is installed.
 
-> **Set `GITHUB_TOKEN` in `.env` *before* the first build.** The build pre-warms
-> Composer's metadata cache, and Compose passes the token to it as a build secret
-> (never baked into a layer). Unauthenticated, that pre-warm hits GitHub's 60
-> requests/hour limit and gives up — the build still succeeds, but the **first boot
-> then spends ~12 minutes** resolving repositories before Apache starts, and
-> `http://localhost:8080` returns an empty page the whole time. Watch the build for
-> `7.2M /composer/cache`; `WARNING: Composer cache pre-warm incomplete` means the
-> token didn't arrive.
+> **Set `GITHUB_TOKEN` in `.env` *before* the first build** — the build pre-warms
+> Composer's metadata cache and needs it. Without it the build still succeeds, but
+> the first boot spends ~12 minutes resolving repositories before Apache answers.
 
 > **Windows:** a `start-docker.bat` helper is provided at the repo root for this path.
 >
@@ -144,7 +139,7 @@ nothing about `/melis` changes:
 | http://localhost:8080/melis | Classic (legacy) back-office |
 | http://localhost:8080/melis-react | **React back-office** (same login) |
 
-How it works: Composer pulls the public `melis-react` branches of
+How it works: Composer pulls the `melis-react` branches of
 [`melis-core`](https://github.com/melisplatform/melis-core) (which ships a **committed
 production build** of the React app, served by MelisAssetManager under
 `/MelisCore/ui-react/` — no Node.js needed at runtime),
@@ -156,44 +151,37 @@ inside the React shell). `install/` does this on first boot; `prebuilt/` and `fp
 bake it into the image at build time. The two modules stay dormant until the web
 installer completes, then activate on the next request.
 
-> **Set `GITHUB_TOKEN` in `.env`** (classic token, no scopes). The React enablement
-> adds three GitHub `vcs` repositories on top of the skeleton's four, and the
-> unauthenticated GitHub API allows only 60 requests/hour.
+> **`GITHUB_TOKEN` is required with `WITH_REACT=1`, and it needs the `repo` scope** —
+> `melis-react-api` and `melis-react-override` are **private** repositories. Without
+> it Composer falls back to the git driver and the step dies with
+> `fatal: could not read Username for 'https://github.com'`. (A scope-less token is
+> enough when `WITH_REACT=0`, where it only lifts the 60 requests/hour API limit.)
 
 Not interested in React? `WITH_REACT=0` in `.env` (turnkey stack), or build the
 image with `--build-arg WITH_REACT=0` (pre-built/fpm) — you get a plain legacy Melis.
 
 ### Temporary dependency pin — `laminas/laminas-serializer:2.17`
 
-The React enablement additionally requires `laminas/laminas-serializer:2.17`.
-**This is a workaround and should be removed once upstream allows it.**
+The React enablement also requires `laminas/laminas-serializer:2.17`.
+**This is a workaround — remove it once upstream allows.**
 
-`melis-core` allows `^2.17 || ^3.0`, so resolving it on its own — which is what
-enabling React does, before the web installer has added the CMS modules — picks the
-newest match, `2.18.0`, and locks it. The installer later adds `melis-front`, which
-requires *exactly* `2.17`, using a **partial** update (`--root-reqs`) that may not
-downgrade an already-locked package. It fails with:
+Enabling React resolves `melis-core` (which allows `^2.17 || ^3.0`) before the web
+installer has added the CMS modules, so Composer picks `2.18.0` and locks it. The
+installer then adds `melis-front`, which requires *exactly* `2.17`, via a partial
+update that cannot downgrade a locked package — the step fails, and because the
+installer ignores Composer's exit code it activates modules it never installed,
+which is a bootstrap fatal on every URL.
 
-```
-laminas/laminas-serializer[2.17.0] but the package is fixed to 2.18.0
-(lock file version) by a partial update and that version does not match
-```
-
-and — because the installer ignores Composer's exit code — carries on and activates
-modules it never installed, which is a bootstrap fatal on every URL. (The installer
-guard repairs that afterwards; the pin avoids the failed step altogether.)
-
-**When can it go?** When `melis-front` stops pinning an exact version. Check with:
+**When can it go?** When `melis-front` stops pinning an exact version:
 
 ```bash
 docker compose exec php composer why laminas/laminas-serializer
 # melisplatform/melis-front vX.Y.Z requires laminas/laminas-serializer (2.17)  ← still pinned
 ```
 
-If that constraint becomes a range (e.g. `^2.17`), delete the
-`"laminas/laminas-serializer:2.17"` line from `*/conf/enable-react.sh` (four copies:
-`install/`, `prebuilt/`, `fpm/`, `app/latest/`). Tracked upstream as the
-`melis-front` half of the issue described in [`CLAUDE.md`](CLAUDE.md) gotcha 8.
+If that becomes a range (e.g. `^2.17`), delete the `"laminas/laminas-serializer:2.17"`
+line from `*/conf/enable-react.sh` — four copies: `install/`, `prebuilt/`, `fpm/`,
+`app/latest/`.
 
 ### Developing the React UI (Vite dev server)
 
@@ -267,7 +255,7 @@ so container names don't collide.
 
 ## Published image tags
 
-[View on Docker Hub →](https://hub.docker.com/r/melisplatform/melis-docker)
+[View on Docker Hub →](https://hub.docker.com/r/melisplatform/melis-docker-react)
 
 **Pre-built (skeleton baked):**
 - Apache (`mod_php`): `latest`, `php8.3`
@@ -332,21 +320,16 @@ breaks Melis' flyway/JDBC URL. Credentials are whatever you set in `.env`
 (defaults `melis` / `melis` / `melis`). The DB must use collation
 `utf8mb4_general_ci` (these compose files already do).
 
-**The installer's "downloading modules" step takes forever** — it shouldn't any
-more. That step runs Composer inside the request as `www-data`, which (with a
-root-owned `/var/www` as its HOME) used to run with **no cache at all** and
-re-downloaded every repository's metadata: ~12 minutes, almost all of it network
-round-trips. The images now give Composer a shared, writable `COMPOSER_HOME`
-(`/composer`) whose metadata cache is filled at build time (~30 s resolves instead
-of ~12 min). If you see it crawl again:
+**The installer's "downloading modules" step takes forever** — that step runs
+Composer inside the request, against 7 GitHub `vcs` repositories, so it depends on a
+warm metadata cache (which the image builds) and an authenticated GitHub API. If it
+crawls (~12 min instead of ~30 s):
 
-- **Set `GITHUB_TOKEN` in `.env` before building.** The cache pre-warm needs it;
-  unauthenticated it hits GitHub's 60 requests/hour limit and quietly gives up
-  (the build still succeeds — only the first install is slow).
-- **Rebuild after setting it**: `docker compose up -d --build`. An image built
-  without the token carries an empty cache.
-- Check that step's Composer output in `data/logs/melis-installer.log` (the
-  installer guard saves what the wizard discards) for "Proceeding without cache".
+- **Set `GITHUB_TOKEN` in `.env`, then rebuild** (`docker compose up -d --build`) —
+  the cache pre-warm needs the token, and an image built without it ships an empty
+  cache.
+- Check the step's Composer output in `data/logs/melis-installer.log` (the installer
+  guard saves what the wizard discards) for "Proceeding without cache".
 
 **The page won't load on first start** — the first run downloads the Melis skeleton
 (turnkey) or seeds the app volume (pre-built) before Apache/nginx answers; give it
@@ -381,7 +364,7 @@ Feel free to fork the project, create a feature branch, and send us a pull reque
 
 * **Melis Technology** - [www.melistechnology.com](https://www.melistechnology.com/)
 
-See also the list of [contributors](https://github.com/melisplatform/melis-docker/contributors) who participated in this project.
+See also the list of [contributors](https://github.com/melisplatform/melis-docker-react/contributors) who participated in this project.
 
 ## License
 

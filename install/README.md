@@ -11,8 +11,8 @@ needed on your machine, just Docker.
 
 ```bash
 # 1. Get this folder
-git clone https://github.com/melisplatform/melis-docker.git
-cd melis-docker/install
+git clone https://github.com/melisplatform/melis-docker-react.git
+cd melis-docker-react/install
 
 # 2. Configure (defaults are fine to start)
 cp .env.example .env

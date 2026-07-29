@@ -19,18 +19,18 @@ DB_NAME="${MYSQL_DATABASE:-melis}"
 cd "$APP_DIR"
 
 if [ ! -f composer.json ]; then
-  echo "[melis-docker] WARNING: no composer.json in $APP_DIR."
-  echo "[melis-docker]   This stack mounts an EXISTING Melis project from ../../../ —"
-  echo "[melis-docker]   it does not create one. Check the bind mount in docker-compose.yml,"
-  echo "[melis-docker]   or use the install/ stack to bootstrap a fresh skeleton."
+  echo "[melis-docker-react] WARNING: no composer.json in $APP_DIR."
+  echo "[melis-docker-react]   This stack mounts an EXISTING Melis project from ../../../ —"
+  echo "[melis-docker-react]   it does not create one. Check the bind mount in docker-compose.yml,"
+  echo "[melis-docker-react]   or use the install/ stack to bootstrap a fresh skeleton."
 fi
 
 # 1) Dependencies: only when the mounted project has none. Never touched otherwise —
 #    this is the user's own codebase, not a skeleton we generated.
 if [ -f composer.json ] && [ ! -d vendor ]; then
-  echo "[melis-docker] No vendor/ in the mounted project — running composer install..."
+  echo "[melis-docker-react] No vendor/ in the mounted project — running composer install..."
   composer install --no-interaction --no-progress || \
-    echo "[melis-docker] WARNING: composer install failed — see the errors above."
+    echo "[melis-docker-react] WARNING: composer install failed — see the errors above."
 fi
 
 # 2) React back-office (/melis-react). ON by default, like every other stack.
@@ -41,7 +41,7 @@ fi
 #    Idempotent, and never fatal: a failure leaves the legacy back-office working.
 if [ "${WITH_REACT:-1}" = "1" ] && [ -f composer.json ]; then
   bash /melis-conf/enable-react.sh "$APP_DIR" \
-    || echo "[melis-docker] WARNING: React enablement failed — continuing with the legacy back-office only. See the errors above, then restart the container to retry."
+    || echo "[melis-docker-react] WARNING: React enablement failed — continuing with the legacy back-office only. See the errors above, then restart the container to retry."
 fi
 
 # 3) Hand the Composer cache these root-run steps just filled to www-data. The web
@@ -55,13 +55,13 @@ chown -R www-data:www-data "${COMPOSER_HOME:-/composer}" 2>/dev/null || true
 #    client). Creds go through the ENVIRONMENT, not $argv: passing them as args
 #    leaves getenv() empty, the loop spins forever and Apache never starts (HTTP 000).
 #    MYSQLI_REPORT_OFF makes a failed connect return false instead of throwing.
-echo "[melis-docker] Waiting for MySQL at ${DB_HOST}..."
+echo "[melis-docker-react] Waiting for MySQL at ${DB_HOST}..."
 tries=0
 until DB_HOST="$DB_HOST" DB_USER="$DB_USER" DB_PASS="$DB_PASS" \
       php -r 'mysqli_report(MYSQLI_REPORT_OFF); exit(@mysqli_connect(getenv("DB_HOST"),getenv("DB_USER"),getenv("DB_PASS"))?0:1);'; do
   tries=$((tries + 1))
   if [ "$tries" -ge 60 ]; then
-    echo "[melis-docker] WARNING: MySQL still unreachable after ~3 min — starting Apache anyway; the web installer will retry."
+    echo "[melis-docker-react] WARNING: MySQL still unreachable after ~3 min — starting Apache anyway; the web installer will retry."
     break
   fi
   sleep 3
@@ -132,7 +132,7 @@ done
 #     correct), not an opt-out: without this the installer cannot run at all.
 if ! su -s /bin/sh www-data -c \
      "test -w '$APP_DIR' && test -w '$APP_DIR/composer.json' && test -w '$APP_DIR/vendor'" 2>/dev/null; then
-  echo "[melis-docker] Making the mounted project writable by www-data (needed by the web installer)."
+  echo "[melis-docker-react] Making the mounted project writable by www-data (needed by the web installer)."
   # Skip this repo itself — it is cloned INSIDE your project (that is how the
   # ../../../ bind mount finds it), Melis never writes to it, and chowning it
   # would mean needing sudo just to edit .env or docker-compose.yml.
@@ -140,15 +140,15 @@ if ! su -s /bin/sh www-data -c \
       -o -exec chown www-data:www-data {} + 2>/dev/null || true
 fi
 
-echo "[melis-docker] ============================================================"
-echo "[melis-docker]  Melis (app/latest) is ready. Open http://localhost:${HOST_PORT:-8080}"
-echo "[melis-docker]  DB to enter in the wizard:  host=${DB_HOST}  db=${DB_NAME}"
-echo "[melis-docker]                              user=${DB_USER}  pass=${DB_PASS}"
+echo "[melis-docker-react] ============================================================"
+echo "[melis-docker-react]  Melis (app/latest) is ready. Open http://localhost:${HOST_PORT:-8080}"
+echo "[melis-docker-react]  DB to enter in the wizard:  host=${DB_HOST}  db=${DB_NAME}"
+echo "[melis-docker-react]                              user=${DB_USER}  pass=${DB_PASS}"
 if [ "${WITH_REACT:-1}" = "1" ]; then
-  echo "[melis-docker]  React back-office: http://localhost:${HOST_PORT:-8080}/melis-react"
+  echo "[melis-docker-react]  React back-office: http://localhost:${HOST_PORT:-8080}/melis-react"
 else
-  echo "[melis-docker]  React back-office: disabled (set WITH_REACT=1 in .env to enable)"
+  echo "[melis-docker-react]  React back-office: disabled (set WITH_REACT=1 in .env to enable)"
 fi
-echo "[melis-docker] ============================================================"
+echo "[melis-docker-react] ============================================================"
 
 exec apache2-foreground

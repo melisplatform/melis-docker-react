@@ -15,8 +15,8 @@ setup through the Melis web installer.
 ## Quick start
 
 ```bash
-git clone https://github.com/melisplatform/melis-docker.git
-cd melis-docker/fpm
+git clone https://github.com/melisplatform/melis-docker-react.git
+cd melis-docker-react/fpm
 
 cp .env.example .env          # defaults are fine to start
 docker compose up -d --build  # first build bakes the skeleton (a few minutes)

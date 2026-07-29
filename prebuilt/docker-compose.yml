@@ -6,7 +6,13 @@
 # The image already ships a ready-to-run Melis project; you only add a database.
 services:
   php:
-    image: ${MELIS_IMAGE:-melisplatform/melis-docker:latest}
+    # Default = the React edition of the image (this repo bakes /melis-react in).
+    # NOT yet published on Docker Hub — until it is, build it locally:
+    #   docker build --secret id=github_token,env=GITHUB_TOKEN \
+    #       -t melisplatform/melis-docker-react:latest .
+    # Set MELIS_IMAGE=melisplatform/melis-docker:latest in .env for the published
+    # LEGACY image instead (no React back-office).
+    image: ${MELIS_IMAGE:-melisplatform/melis-docker-react:latest}
     # To build locally instead of pulling the published image, uncomment:
     # build:
     #   context: .

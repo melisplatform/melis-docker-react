@@ -27,11 +27,11 @@ cd "$APP_DIR"
 # Already enabled? (module installed + config patched)
 if [ -d vendor/melisplatform/melis-react-override ] \
     && grep -q "MelisReactOverride" config/application.config.php 2>/dev/null; then
-    echo "[melis-docker] React back-office already enabled — skipping."
+    echo "[melis-docker-react] React back-office already enabled — skipping."
     exit 0
 fi
 
-echo "[melis-docker] Enabling the React back-office (/melis-react)..."
+echo "[melis-docker-react] Enabling the React back-office (/melis-react)..."
 
 export COMPOSER_ALLOW_SUPERUSER=1
 
@@ -40,14 +40,14 @@ export COMPOSER_ALLOW_SUPERUSER=1
 if [ -n "${GITHUB_TOKEN:-}" ]; then
     export COMPOSER_AUTH="{\"github-oauth\":{\"github.com\":\"${GITHUB_TOKEN}\"}}"
 else
-    echo "[melis-docker] WARNING: no GITHUB_TOKEN set — this step will almost certainly"
-    echo "[melis-docker]   FAIL. melis-react-api and melis-react-override are PRIVATE"
-    echo "[melis-docker]   repositories: without a token (scope 'repo') Composer falls back"
-    echo "[melis-docker]   to the git driver and dies with"
-    echo "[melis-docker]     fatal: could not read Username for 'https://github.com'"
-    echo "[melis-docker]   A token is also what keeps the 7 GitHub 'vcs' repositories this"
-    echo "[melis-docker]   project resolves off the unauthenticated API limit (60 req/h)."
-    echo "[melis-docker]   Set GITHUB_TOKEN in .env and restart."
+    echo "[melis-docker-react] WARNING: no GITHUB_TOKEN set — this step will almost certainly"
+    echo "[melis-docker-react]   FAIL. melis-react-api and melis-react-override are PRIVATE"
+    echo "[melis-docker-react]   repositories: without a token (scope 'repo') Composer falls back"
+    echo "[melis-docker-react]   to the git driver and dies with"
+    echo "[melis-docker-react]     fatal: could not read Username for 'https://github.com'"
+    echo "[melis-docker-react]   A token is also what keeps the 7 GitHub 'vcs' repositories this"
+    echo "[melis-docker-react]   project resolves off the unauthenticated API limit (60 req/h)."
+    echo "[melis-docker-react]   Set GITHUB_TOKEN in .env and restart."
 fi
 
 composer config repositories.melis-core            vcs https://github.com/melisplatform/melis-core
@@ -90,5 +90,5 @@ composer require --no-interaction --no-progress --prefer-dist -W --no-scripts \
 php "$CONF_DIR/enable-react.php" "$APP_DIR/config/application.config.php"
 php -l "$APP_DIR/config/application.config.php" >/dev/null
 
-echo "[melis-docker] React back-office enabled — /melis-react goes live once the web"
-echo "[melis-docker] installer has completed."
+echo "[melis-docker-react] React back-office enabled — /melis-react goes live once the web"
+echo "[melis-docker-react] installer has completed."

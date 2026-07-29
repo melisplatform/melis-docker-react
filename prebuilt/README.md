@@ -14,8 +14,8 @@ bring a database, then finish setup through the Melis web installer.
 ## Quick start (compose: image + database)
 
 ```bash
-git clone https://github.com/melisplatform/melis-docker.git
-cd melis-docker/prebuilt
+git clone https://github.com/melisplatform/melis-docker-react.git
+cd melis-docker-react/prebuilt
 
 cp .env.example .env        # defaults are fine to start
 docker compose up -d        # pulls the pre-built image + starts MySQL
@@ -45,7 +45,7 @@ docker run -d --name melis -p 8080:80 \
   -e MYSQL_DATABASE=melis \
   -e MYSQL_USER=melis \
   -e MYSQL_PASSWORD=melis \
-  melisplatform/melis-docker:latest
+  melisplatform/melis-docker-react:latest
 ```
 
 > `MYSQL_HOST` must be a hostname **without** `:port` (e.g. `db`, not `db:3306`) —

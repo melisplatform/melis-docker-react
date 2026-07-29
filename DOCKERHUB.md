@@ -7,7 +7,7 @@ setup through the native Melis **web installer** (DB schema, admin user, optiona
 Images are **multi-arch** (`linux/amd64` + `linux/arm64`, so they run natively on
 Intel/AMD and on Apple Silicon).
 
-Source & full docs: **https://github.com/melisplatform/melis-docker**
+Source & full docs: **https://github.com/melisplatform/melis-docker-react**
 
 ## Tags
 
@@ -42,7 +42,7 @@ docker run -d --name melis-db --network melis \
 docker run -d --name melis --network melis -p 8080:80 \
   -e MYSQL_HOST=melis-db \
   -e MYSQL_DATABASE=melis -e MYSQL_USER=melis -e MYSQL_PASSWORD=melis \
-  melisplatform/melis-docker:latest
+  melisplatform/melis-docker-react:latest
 ```
 
 Then open **http://localhost:8080** and follow the web installer (use the same DB
@@ -57,9 +57,9 @@ values: host `melis-db`, database/user/password `melis`).
 
 The repository ships compose files that wire the image + database together for you:
 
-- [`prebuilt/`](https://github.com/melisplatform/melis-docker/tree/master/prebuilt) — Apache image + MySQL
-- [`fpm/`](https://github.com/melisplatform/melis-docker/tree/master/fpm) — nginx + PHP-FPM + MySQL
-- [`install/`](https://github.com/melisplatform/melis-docker/tree/master/install) — turnkey build with editable code on the host
+- [`prebuilt/`](https://github.com/melisplatform/melis-docker-react/tree/master/prebuilt) — Apache image + MySQL
+- [`fpm/`](https://github.com/melisplatform/melis-docker-react/tree/master/fpm) — nginx + PHP-FPM + MySQL
+- [`install/`](https://github.com/melisplatform/melis-docker-react/tree/master/install) — turnkey build with editable code on the host
 
 ## Notes
 
@@ -70,4 +70,4 @@ The repository ships compose files that wire the image + database together for y
 
 ## License
 
-OSL-3.0 — see the [repository](https://github.com/melisplatform/melis-docker).
+OSL-3.0 — see the [repository](https://github.com/melisplatform/melis-docker-react).

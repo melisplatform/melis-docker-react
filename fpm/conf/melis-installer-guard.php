@@ -1,6 +1,6 @@
 <?php
 /**
- * melis-docker — web-installer guard (loaded via php.ini `auto_prepend_file`).
+ * melis-docker-react — web-installer guard (loaded via php.ini `auto_prepend_file`).
  *
  * WHY THIS EXISTS
  * ---------------
@@ -99,10 +99,10 @@ if (PHP_SAPI === 'cli') {
                 json_encode(['github-oauth' => ['github.com' => $token]], JSON_PRETTY_PRINT) . "\n");
             @chmod($app . '/auth.json', 0600);
             @chown($app . '/auth.json', 'www-data');
-            error_log('[melis-docker] wrote auth.json from GITHUB_TOKEN — the installer'
+            error_log('[melis-docker-react] wrote auth.json from GITHUB_TOKEN — the installer'
                 . ' will not hit the unauthenticated GitHub API limit');
         } elseif ($token === '') {
-            error_log('[melis-docker] no GITHUB_TOKEN set: Composer will use the'
+            error_log('[melis-docker-react] no GITHUB_TOKEN set: Composer will use the'
                 . ' unauthenticated GitHub API (60 req/hour per IP). If the installer'
                 . ' reports "Could not authenticate against github.com", set one in .env.');
         }
@@ -114,7 +114,7 @@ if (PHP_SAPI === 'cli') {
         if (trim(implode('', $cfg('platform.php'))) === '') {
             $version = PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION . '.' . PHP_RELEASE_VERSION;
             $cfg('platform.php ' . escapeshellarg($version));
-            error_log('[melis-docker] pinned Composer platform.php to ' . $version);
+            error_log('[melis-docker-react] pinned Composer platform.php to ' . $version);
         }
     }
 
@@ -131,7 +131,7 @@ if (PHP_SAPI === 'cli') {
         // covers the published pre-built image too. Errors are logged, not lost.
         set_error_handler(static function (int $no, string $str, string $file = '', int $line = 0): bool {
             if ((error_reporting() & $no) !== 0) {
-                error_log(sprintf('[melis-docker][installer] %s in %s:%d', $str, $file, $line));
+                error_log(sprintf('[melis-docker-react][installer] %s in %s:%d', $str, $file, $line));
             }
             return true; // handled — PHP must not render it into the response
         });
@@ -210,7 +210,7 @@ if (PHP_SAPI === 'cli') {
         date('c'),
         implode(', ', $missing)
     ));
-    error_log('[melis-docker] installer left these modules activated but not installed: '
+    error_log('[melis-docker-react] installer left these modules activated but not installed: '
         . implode(', ', $missing) . ' — attempting repair, see ' . $log);
 
     // Retry the install ourselves. -W (--with-all-dependencies) is the difference
@@ -252,7 +252,7 @@ if (PHP_SAPI === 'cli') {
         . implode("\n", $output) . "\nexit=$exit\n");
 
     if ($exit === 0) {
-        error_log('[melis-docker] repair succeeded — ' . implode(', ', $packages) . ' installed.');
+        error_log('[melis-docker-react] repair succeeded — ' . implode(', ', $packages) . ' installed.');
         // Installing the code is only half of it: a Melis module also ships schema
         // deltas, and the installer already ran its dbdeploy step. Without these the
         // platform boots and then dies on the first query ("Table melis_cms_page_seo
@@ -288,12 +288,12 @@ if (PHP_SAPI === 'cli') {
                     chdir($cwd);
                     $write("dbdeploy: copied $copied delta(s), changelog now "
                         . (new \MelisDbDeploy\Service\MelisDbDeployDeployService())->changeLogCount() . "/$total\n");
-                    error_log('[melis-docker] applied ' . $copied . ' schema delta(s) for the repaired modules');
+                    error_log('[melis-docker-react] applied ' . $copied . ' schema delta(s) for the repaired modules');
                 }
             }
         } catch (\Throwable $e) {
             $write('dbdeploy failed: ' . $e->getMessage() . "\n");
-            error_log('[melis-docker] schema deltas could not be applied: ' . $e->getMessage());
+            error_log('[melis-docker-react] schema deltas could not be applied: ' . $e->getMessage());
         }
         @file_put_contents($stamp, (string) @filemtime($moduleLoad));
         flock($lock, LOCK_UN);
@@ -306,7 +306,7 @@ if (PHP_SAPI === 'cli') {
     $php = "<?php\nreturn " . var_export($kept, true) . ";\n";
     if (@file_put_contents($moduleLoad, $php) !== false) {
         $write("GUARD: repair failed, dropped from module list: " . implode(', ', $missing) . "\n");
-        error_log('[melis-docker] repair FAILED. Dropped ' . implode(', ', $missing)
+        error_log('[melis-docker-react] repair FAILED. Dropped ' . implode(', ', $missing)
             . ' from the module list so the platform still boots. Re-run the wizard\'s'
             . ' module step, or install them manually. Composer output: ' . $log);
     }

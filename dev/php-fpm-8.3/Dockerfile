@@ -1,7 +1,7 @@
 # Melis Platform — dev base image (PHP 8.3 FPM + Composer)
 # PHP-FPM base with the extensions Melis needs (listens on :9000). Put a web server
 # (e.g. nginx) in front — see fpm/ for a ready-to-run nginx + php-fpm stack.
-# Build: docker build -t melisplatform/melis-docker:dev-fpm-8.3 .
+# Build: docker build -t melisplatform/melis-docker-react:dev-fpm-8.3 .
 FROM php:8.3-fpm
 
 ARG TZ=Europe/Paris

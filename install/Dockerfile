@@ -113,7 +113,7 @@ RUN --mount=type=secret,id=github_token \
                    "melisplatform/melis-react-override:dev-melis-react" ; \
             fi \
          && composer update --dry-run --no-interaction --no-scripts --no-progress ) \
-       || echo "[melis-docker] WARNING: Composer cache pre-warm incomplete — the first web install will be slower." \
+       || echo "[melis-docker-react] WARNING: Composer cache pre-warm incomplete — the first web install will be slower." \
     ; rm -rf /tmp/warm \
     && chown -R www-data:www-data /composer \
     && du -sh /composer/cache

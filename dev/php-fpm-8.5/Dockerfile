@@ -1,7 +1,7 @@
 # Melis Platform — dev base image (PHP 8.5 FPM + Composer)
 # PHP-FPM base with the extensions Melis needs (listens on :9000). Put a web server
 # (e.g. nginx) in front — see fpm/ for a ready-to-run nginx + php-fpm stack.
-# Build: docker build -t melisplatform/melis-docker:dev-fpm-8.5 .
+# Build: docker build -t melisplatform/melis-docker-react:dev-fpm-8.5 .
 #
 # NOTE: This is a valid PHP 8.5 base image, but **Melis does not run on 8.5 yet** —
 # the skeleton's Laminas dependencies cap at PHP 8.4, so `composer install` fails on

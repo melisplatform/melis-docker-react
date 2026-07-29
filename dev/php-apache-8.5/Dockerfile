@@ -1,7 +1,7 @@
 # Melis Platform — dev base image (PHP 8.5 + Apache + Composer)
 # A ready-to-use PHP/Apache base with the extensions Melis needs. Mount your Melis
 # project into the container (see app/latest/ for a full local dev stack).
-# Build: docker build -t melisplatform/melis-docker:dev-apache-8.5 .
+# Build: docker build -t melisplatform/melis-docker-react:dev-apache-8.5 .
 #
 # NOTE: This is a valid PHP 8.5 base image, but **Melis does not run on 8.5 yet** —
 # the skeleton's Laminas dependencies cap at PHP 8.4, so `composer install` fails on

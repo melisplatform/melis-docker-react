@@ -347,7 +347,7 @@ in the sibling `../melis-platform-website` project. Validate edits with
 ## CI (GitHub Actions, all multi-arch `linux/amd64,linux/arm64`)
 
 - **`docker-image.yml`** — builds `dev/` base images, matrix `{apache,fpm} × {8.1..8.5}`,
-  pushes `melisplatform/melis-docker:dev-{variant}-{php}` on `master` only.
+  pushes `melisplatform/melis-docker-react:dev-{variant}-{php}` on `master` only.
 - **`prebuilt-image.yml`** — builds the baked images: `prebuilt/` → `latest`/`php8.3`,
   `fpm/` → `fpm-latest`/`fpm-php8.3`; pushes on `master` pushes and `v*` tags.
 - **`dockerhub-description.yml`** — syncs `DOCKERHUB.md` to the Docker Hub overview.
@@ -359,7 +359,7 @@ in the sibling `../melis-platform-website` project. Validate edits with
 
 ```bash
 # Pre-built (validated E2E): build the baked image, then run image + db
-cd prebuilt && docker build -t melisplatform/melis-docker:latest . \
+cd prebuilt && docker build -t melisplatform/melis-docker-react:latest . \
   && cp -n .env.example .env && docker compose up -d
 # Turnkey: builds + composer create-project on first run (slow first time)
 cd install && cp -n .env.example .env && docker compose up --build

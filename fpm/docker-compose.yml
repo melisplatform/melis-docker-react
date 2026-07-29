@@ -20,7 +20,7 @@ services:
       # 60 req/hour GitHub API limit and fail the React step.
       secrets:
         - github_token
-    image: ${MELIS_FPM_IMAGE:-melisplatform/melis-docker:fpm-php8.3}
+    image: ${MELIS_FPM_IMAGE:-melisplatform/melis-docker-react:fpm-php8.3}
     container_name: ${MELIS_CONTAINER_NAME:-melis}-php
     depends_on:
       db:
