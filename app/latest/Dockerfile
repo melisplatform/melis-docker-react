@@ -164,8 +164,12 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 
 ## EXPOSE
 EXPOSE 80
-# Container is healthy once Apache serves the app (the installer redirects / -> 200).
-# The vite override waits on this before mounting into vendor/.
+# Container is healthy once Apache serves the app. The vite override waits on this
+# before mounting into vendor/. Probe /melis/ and NOT /: `/` is the PUBLIC site and
+# only exists once a site is installed, so a back-office-only install (or a demo site
+# whose module failed to install) answers 500 there, the container is wrongly marked
+# unhealthy and vite then never starts at all. /melis/ is served in every state — it
+# 302s to /melis/setup before the install and to /melis/login after.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
-    CMD curl -fsS http://localhost/ -o /dev/null || exit 1
+    CMD curl -fsS http://localhost/melis/ -o /dev/null || exit 1
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

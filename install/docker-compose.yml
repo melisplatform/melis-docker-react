@@ -44,6 +44,11 @@ services:
       # cache; a cache under /root would be unreadable to it. The entrypoint chowns
       # it to www-data on every boot (a fresh volume mounts in root-owned).
       - composer-cache:/composer/cache
+      # Tiny state volume — holds only the "this stack has booted successfully"
+      # marker. It is a NAMED volume on purpose: dockerd manages it, so unlike the
+      # bind above it can never come back as an empty staging dir, which is exactly
+      # what lets entrypoint.sh step 0 tell a broken mount from a genuine first run.
+      - melis-state:/melis-state
     environment:
       APP_NAME: ${APP_NAME:-melis}
       TZ: ${TZ:-Europe/Paris}
@@ -62,9 +67,19 @@ services:
       WITH_REACT: ${WITH_REACT:-1}
       MELIS_PLATFORM: ${MELIS_PLATFORM:-local}
       MELIS_MODULE: ${MELIS_MODULE:-MySite}
+      # Set 0 to disable entrypoint.sh's bind-mount sanity check (step 0).
+      MELIS_MOUNT_CHECK: ${MELIS_MOUNT_CHECK:-1}
     networks:
       - melis
-    restart: unless-stopped
+    # NOT `unless-stopped`, deliberately — this service host-binds ./melis.
+    # On Rancher Desktop/WSL the bind is staged by a helper in your WSL distro at
+    # container-CREATE time and does not survive a WSL/Rancher restart. A restart
+    # policy makes dockerd bring the container back on its own, bypassing the helper,
+    # so it returns attached to an empty staging dir — the stack looks up and healthy
+    # while serving nothing. Staying down until `make up` re-creates it is the point:
+    # the failure becomes visible instead of silent. (db keeps its policy: it uses a
+    # named volume and is immune.) Same reasoning as the vite supervisor loop below.
+    restart: "no"
 
   db:
     image: mysql:${MYSQL_VERSION:-8.4}
@@ -117,11 +132,18 @@ services:
     # a restart-looping container gets handed a DEGENERATE staging dir: /var/www/melis
     # then contains only an empty path skeleton, package.json is never found and it
     # loops forever (observed: RestartCount 35, host tree perfectly intact). Staying
-    # alive keeps the mount we booted with. `restart: unless-stopped` remains as a
-    # crash net only.
+    # alive keeps the mount we booted with — which is also why this service now runs
+    # with `restart: "no"` (see below): a restart never re-stages the bind, it only
+    # loses it.
     command: >
       sh -c "A=/var/www/${APP_NAME:-melis}/vendor/melisplatform/melis-core/ui-react;
              while :; do
+               if [ ! -f /var/www/${APP_NAME:-melis}/composer.json ] && [ -f /melis-state/.melis-bootstrapped ]; then
+                 echo '[vite] FATAL: the ./melis bind mount is detached — this container sees an empty';
+                 echo '[vite] staging dir, not your project. php and vite are staged INDEPENDENTLY, so this';
+                 echo '[vite] can happen to vite alone. Fix: cd install && docker compose down && docker compose up -d';
+                 sleep 60; continue;
+               fi;
                if [ ! -f $$A/package.json ]; then
                  echo '[vite] melis-core/ui-react not present yet (first boot installs it) — waiting...'; sleep 10; continue;
                fi;
@@ -145,6 +167,9 @@ services:
       - "${VITE_PORT:-5173}:5173"
     volumes:
       - ./melis:/var/www/${APP_NAME:-melis}
+      # Read-only: vite only *reads* the boot marker to detect a detached mount
+      # (see the guard at the top of the supervisor loop). php owns writing it.
+      - melis-state:/melis-state:ro
       # NO named volume for node_modules — deliberately. Mounting one INSIDE
       # melis-core (a directory Composer deletes and recreates) pins the old inode
       # in this container's mount namespace: the path then resolves to the new
@@ -169,7 +194,10 @@ services:
         condition: service_healthy
     networks:
       - melis
-    restart: unless-stopped
+    # See the php service: a restart policy on a host-bound service hands the
+    # container back an empty staging dir after a WSL/Rancher restart. The
+    # supervisor loop above is the crash net instead — it never exits.
+    restart: "no"
 
 # Build-time only (see the php service's build.secrets): never mounted into a
 # running container, never written to an image layer.
@@ -182,6 +210,8 @@ networks:
     name: ${MELIS_CONTAINER_NAME:-melis}-network
 
 volumes:
+  melis-state:
+    name: ${MELIS_CONTAINER_NAME:-melis}-state
   melis_db_data:
     name: ${MELIS_CONTAINER_NAME:-melis}-db-data
   composer-cache:

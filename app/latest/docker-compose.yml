@@ -54,9 +54,18 @@ services:
       # otherwise breaks the web installer's module step — and the React enablement
       # (3 more GitHub vcs repos). See .env.example.
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      # Set 0 to disable entrypoint.sh's bind-mount sanity check (step 0).
+      MELIS_MOUNT_CHECK: ${MELIS_MOUNT_CHECK:-1}
     networks:
       - melis
-    restart: unless-stopped
+    # NOT `unless-stopped`, deliberately — this service host-binds your project via
+    # ../../../. On Rancher Desktop/WSL that bind is staged at container-CREATE time
+    # and does not survive a WSL/Rancher restart; a restart policy has dockerd bring
+    # the container back on its own, bypassing the staging helper, so it returns
+    # attached to an EMPTY directory while looking perfectly healthy. Staying down
+    # until `make up` re-creates it makes the failure visible. (db keeps its policy:
+    # it uses a named volume and is immune.)
+    restart: "no"
 
   db:
     image: mysql:${MYSQL_VERSION}

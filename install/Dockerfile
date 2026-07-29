@@ -124,6 +124,14 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 EXPOSE 80
 # Container is healthy once Apache serves the app. start-period is generous because
 # the very first run downloads the skeleton (composer create-project) before Apache.
+#
+# Probe /melis/ and NOT /: `/` is the PUBLIC site, which only exists if a site was
+# installed. A perfectly good back-office-only install (or one where the demo site's
+# module failed to install — see the installer guard) answers 500 there, which marked
+# this container unhealthy and left vite stuck in `Created` forever waiting on
+# `depends_on: service_healthy`. Observed. /melis/ is served in every state: it 302s
+# to /melis/setup before the install and to /melis/login after, and curl without -L
+# treats a 302 as success.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=300s --retries=3 \
-    CMD curl -fsS http://localhost/ -o /dev/null || exit 1
+    CMD curl -fsS http://localhost/melis/ -o /dev/null || exit 1
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

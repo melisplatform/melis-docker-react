@@ -210,7 +210,10 @@ React-specific gotchas (each cost a debugging round — respect them):
 - **Rancher Desktop / WSL: pre-create `install/melis` before the first `up`.**
   If the bind-mount source doesn't exist, Rancher's mount helper stages a SEPARATE
   empty dir per container — php and vite silently don't share the app dir and the
-  skeleton vanishes on recreate. `make env` (hence `make up`) now creates it.
+  skeleton vanishes on recreate. `make env` (hence `make up`) now creates it, plus a
+  `.melis-mount` sentinel inside it. A missing source dir is only ONE way to get a
+  phantom mount: see **gotcha 12** for the restart case, which is far more common and
+  bites a stack that has been working for hours.
 - Vite **dev mode** (not the committed build) logs a scan error for
   `@melis-ai-engine` — melis-core's ui-react source composes the AI assistant from
   the optional `melis-ai-engine` module, which this skeleton doesn't install. The
@@ -324,6 +327,40 @@ React-specific gotchas (each cost a debugging round — respect them):
    PHP_INI_SYSTEM-locked and **cannot** be overridden by `ini_set` — verified. The guard
    additionally installs a logging error handler on installer URLs, which covers the
    published pre-built image (whose Apache config can't be changed without a rebuild).
+12. **Rancher Desktop / WSL: a host bind mount does NOT survive a restart, and the
+   detachment is silent.** The `docker` CLI talks to a `wsl-helper docker-proxy` running
+   in *your* WSL distro; for every bind it creates
+   `/mnt/wsl/rancher-desktop/run/docker-mounts/<uuid>` and bind-mounts the host path
+   into it, which propagates to the `rancher-desktop` distro where dockerd runs (that
+   tree is a **shared** tmpfs). Those binds are staged at container-**create** time and
+   are gone after `wsl --shutdown`, a Rancher Desktop restart, or a host reboot. A
+   container that **dockerd** brings back on its own — a `restart:` policy, `docker
+   start`, `docker compose restart` — never goes through the proxy, so it comes back
+   attached to an **empty** staging dir while reporting `Up (healthy)`. Each container
+   is staged separately, so php and vite can disagree with each other *and* with the
+   host. Symptoms seen: every URL 302ing to `/melis/setup` and `/melis-react` 404ing on
+   an install that had completed hours earlier — because the served tree still had
+   `MelisInstaller` in `melis.module.load.php`, so the React gate in
+   `application.config.php` was false. `install/entrypoint.sh` had meanwhile run
+   `composer create-project` into the phantom dir, creating a whole second Melis tree.
+   Note `st_dev:st_ino` of a detached staging dir **matches the host's** — inode
+   comparison is useless as a check; write a marker file and look for it on the host
+   (that is what `make doctor` does).
+   Mitigations, all shipped:
+   - `restart: "no"` on every service that host-binds the app dir (`install/` php+vite,
+     `app/latest/` php) so the stack stays visibly down instead of coming back blind.
+     `db` keeps its policy — named volumes are immune.
+   - `entrypoint.sh` step 0 refuses to bootstrap into a phantom dir. It needs two
+     signals because a phantom dir and a genuine first run are indistinguishable from
+     inside the container: `.melis-mount` / `composer.json` (both ride the bind, so
+     invisible from a phantom) prove the mount, and `.melis-bootstrapped` in the
+     `melis-state` **named** volume proves a previous successful boot. Neither of the
+     first two + the third = broken mount, hard exit. Escape hatch `MELIS_MOUNT_CHECK=0`.
+   - `app/latest/` just requires `composer.json`: that stack never creates a project,
+     so its absence is proof enough.
+   - `make doctor STACK=install|app/latest` checks it on demand.
+   Recovery is always `docker compose down && docker compose up -d` — a restart cannot
+   re-stage the mount, only a create can.
 
 ## The installer guard (`*/conf/melis-installer-guard.php`)
 
@@ -363,7 +400,12 @@ in the sibling `../melis-platform-website` project. Validate edits with
   ignores `**/.env`, `install/melis/`, `.claude/settings.local.json`, `.DS_Store`.
 - DB ports are bound to `127.0.0.1` (not exposed on the LAN).
 - Web services have a `HEALTHCHECK`; Apache gets an explicit `ServerName localhost`
-  to silence `AH00558`.
+  to silence `AH00558`. The probe hits **`/melis/`, never `/`** — `/` is the public
+  site and only exists once a site is installed, so a back-office-only install (or one
+  where the demo site's module failed, which the installer guard turns into a dropped
+  module) answers 500 there. That marked php unhealthy and left vite stuck in `Created`
+  forever on `depends_on: service_healthy`. Observed. `/melis/` answers in every state:
+  302 to `/melis/setup` before the install, 302 to `/melis/login` after.
 
 ## CI (GitHub Actions, all multi-arch `linux/amd64,linux/arm64`)
 

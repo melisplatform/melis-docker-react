@@ -13,6 +13,54 @@ DB_NAME="${MYSQL_DATABASE:-melis}"
 
 cd "$APP_DIR"
 
+# 0) Bind-mount sanity check — REFUSE to bootstrap into a phantom app dir.
+#
+#    On Rancher Desktop/WSL the docker CLI talks to a `wsl-helper docker-proxy`
+#    running in YOUR distro; for every bind mount it creates
+#    /mnt/wsl/rancher-desktop/run/docker-mounts/<uuid> and bind-mounts the host path
+#    into it, which propagates to the rancher-desktop distro where dockerd runs.
+#    Those binds do NOT survive a WSL shutdown / Rancher restart, and a container
+#    that dockerd brings back on its own (restart policy, `docker start`) never goes
+#    through the proxy's create path — so it comes back with the staging dir EMPTY.
+#    Without this check step 1 below sees "no composer.json", cheerfully runs
+#    create-project into that phantom dir, and you get a second, divergent Melis
+#    tree that Apache serves while your host tree sits there untouched. Diagnosed
+#    the hard way: every URL redirecting to /melis/setup and /melis-react 404ing on
+#    an install that had completed hours earlier.
+#
+#    Two independent proofs the mount is real; either is enough:
+#      - .melis-mount   — written by `make env` on the host (and by us after a
+#                         successful bootstrap), so it can only be visible here if
+#                         the bind is live;
+#      - composer.json  — any already-bootstrapped tree.
+#    Neither + evidence of a previous successful boot (a marker in a NAMED volume,
+#    which dockerd manages and therefore can never go phantom) = broken mount.
+#    A genuine first run has no marker, so it proceeds normally.
+#    Escape hatch: MELIS_MOUNT_CHECK=0.
+MOUNT_MARKER="/melis-state/.melis-bootstrapped"
+if [ "${MELIS_MOUNT_CHECK:-1}" = "1" ] && [ ! -f .melis-mount ] && [ ! -f composer.json ] \
+   && [ -f "$MOUNT_MARKER" ]; then
+  cat >&2 <<EOF
+[melis-docker-react] FATAL: $APP_DIR is empty, but this stack has booted successfully before.
+
+  The host bind mount (./melis) is detached — the container is looking at an empty
+  staging directory, not at your project. This happens on Rancher Desktop/WSL after
+  a WSL shutdown, a Rancher Desktop restart, or when dockerd restarts the container
+  by itself instead of \`docker compose up\` re-creating it.
+
+  Your code on the host is fine. Re-create the containers so the mount is staged again
+  (a restart is NOT enough — only a create goes through the staging helper):
+
+      cd install && docker compose down && docker compose up -d      # or: make up STACK=install
+
+  If you deleted ./melis on purpose to start clean, recreate it first
+  (\`mkdir -p melis && touch melis/.melis-mount\`, which is what \`make env\` does), or
+  wipe the volumes with \`docker compose down -v\`.
+  To bypass this check entirely, set MELIS_MOUNT_CHECK=0 in .env.
+EOF
+  exit 1
+fi
+
 # 1) Bootstrap a fresh Melis skeleton on first run (empty app dir / no composer.json)
 if [ ! -f composer.json ]; then
   echo "[melis-docker-react] No Melis project found in $APP_DIR — creating a fresh skeleton..."
@@ -24,6 +72,15 @@ if [ ! -f composer.json ]; then
   rmdir -p vendor/melisplatform/melis-core/ui-react/node_modules 2>/dev/null || true
   composer create-project melisplatform/melis-platform-skeleton . --no-interaction --no-progress
 fi
+
+# 1b) The app dir is proven good — record it for step 0 of the next boot. The
+#     sentinel rides the bind mount (so it is invisible from a phantom staging dir);
+#     the marker rides a named volume (so it survives one). Both are needed: the
+#     marker alone can't tell "mount broke" from "fresh dir", the sentinel alone
+#     can't tell "mount broke" from "never ran".
+touch .melis-mount 2>/dev/null || true
+mkdir -p "$(dirname "$MOUNT_MARKER")" 2>/dev/null || true
+touch "$MOUNT_MARKER" 2>/dev/null || true
 
 # 2) Make sure dependencies are installed (e.g. mounted project without vendor/)
 if [ ! -d vendor ]; then

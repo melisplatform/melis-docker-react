@@ -65,7 +65,12 @@ services:
       - melis_app:/var/www/${APP_NAME:-melis}:ro
       - ./conf/default.conf:/etc/nginx/conf.d/default.conf:ro
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      # /melis/ and NOT /: `/` is the PUBLIC site and only exists once a site is
+      # installed, so a back-office-only install (or a demo site whose module failed
+      # to install) answers 500 there and this service is wrongly marked unhealthy —
+      # which in turn keeps anything with `depends_on: service_healthy` (vite) from
+      # ever starting. /melis/ is served in every state.
+      test: ["CMD", "wget", "-qO-", "http://localhost/melis/"]
       interval: 15s
       timeout: 5s
       retries: 5

@@ -18,11 +18,33 @@ DB_NAME="${MYSQL_DATABASE:-melis}"
 
 cd "$APP_DIR"
 
-if [ ! -f composer.json ]; then
-  echo "[melis-docker-react] WARNING: no composer.json in $APP_DIR."
-  echo "[melis-docker-react]   This stack mounts an EXISTING Melis project from ../../../ —"
-  echo "[melis-docker-react]   it does not create one. Check the bind mount in docker-compose.yml,"
-  echo "[melis-docker-react]   or use the install/ stack to bootstrap a fresh skeleton."
+# 0) Bind-mount sanity check. This stack NEVER creates a project, so the mounted
+#    tree always has a composer.json — its absence means the bind mount is not
+#    pointing where you think. On Rancher Desktop/WSL that is the usual cause: the
+#    bind is staged by a `wsl-helper docker-proxy` in your WSL distro at container-
+#    CREATE time and does not survive a WSL shutdown / Rancher restart, so a
+#    container dockerd brings back by itself gets an EMPTY staging dir. Failing
+#    loudly here beats serving an empty document root (or, worse, letting the React
+#    enablement rewrite files in a phantom tree). Escape hatch: MELIS_MOUNT_CHECK=0.
+if [ ! -f composer.json ] && [ "${MELIS_MOUNT_CHECK:-1}" = "1" ]; then
+  cat >&2 <<EOF
+[melis-docker-react] FATAL: no composer.json in $APP_DIR — the bind mount looks broken.
+
+  This stack mounts an EXISTING Melis project from ../../../ and never creates one,
+  so this directory should not be empty. Most likely the host bind mount is detached
+  (Rancher Desktop/WSL stages it at container-create time and loses it on a WSL or
+  Rancher restart). Your code on the host is fine.
+
+  Re-create the container so the mount is staged again (a restart is NOT enough —
+  only a create goes through the staging helper):
+
+      cd app/latest && docker compose down && docker compose up -d   # or: make up STACK=app/latest
+
+  If the path really is wrong, check the \`../../../\` volume in docker-compose.yml —
+  this stack expects to live at <your-melis-project>/melis-docker/app/latest.
+  To bypass this check, set MELIS_MOUNT_CHECK=0 in .env.
+EOF
+  exit 1
 fi
 
 # 1) Dependencies: only when the mounted project has none. Never touched otherwise —
