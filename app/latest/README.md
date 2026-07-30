@@ -36,17 +36,17 @@ cd melis-docker-react/app/latest
 cp .env.example .env
 #    edit APP_NAME + DB creds to match your project
 
-# 3. optional but recommended: boot once with WITH_REACT=0 (the default)
-docker compose up -d --build     # confirms the mount + DB work
+# 3. COMMIT YOUR PROJECT FIRST — the React back-office is ON by default
+#    (WITH_REACT=1, like install/prebuilt/fpm), and the first boot rewrites your
+#    composer.json, composer.lock and config/application.config.php on the host.
+#    Want a plain legacy Melis instead? set WITH_REACT=0 in .env.
+git -C ../../.. status            # from app/latest, that's your project root
 
-# 4. OPTIONAL — enable the React back-office.
-#    Make sure your project is committed first: this step rewrites your
-#    composer.json, composer.lock and config/application.config.php.
-#    Then edit .env by hand:   WITH_REACT=1
-docker compose up -d
+# 4. build + run
+docker compose up -d --build
 ```
 
-From the repo root, `make up-build STACK=app/latest` is equivalent to step 3.
+From the repo root, `make up-build STACK=app/latest` is equivalent to step 4.
 
 Before committing, add these to your **project's** `.gitignore` — the stack creates
 them inside your working copy:
@@ -106,20 +106,22 @@ platform file for you with the correct container hostname.
 
 ## React back-office (`/melis-react`)
 
-This is step 4 of [Run it](#run-it), described in full.
+This is step 3 of [Run it](#run-it), described in full.
 
-Supported here, but **off by default** — this is the one stack where the
-application directory is *your own codebase* rather than a skeleton this repo
-generated. Enabling React runs `composer require` against it, so it rewrites your
-`composer.json`, `composer.lock` and `config/application.config.php` **on the
-host**. Commit your work first.
+**On by default** (`WITH_REACT=1`), like [`install/`](../../install/),
+[`prebuilt/`](../../prebuilt/) and [`fpm/`](../../fpm/) — but read this once,
+because this is the one stack where the application directory is *your own
+codebase* rather than a skeleton this repo generated. Enabling React runs
+`composer require` against it, so the first boot rewrites your `composer.json`,
+`composer.lock` and `config/application.config.php` **on the host**. Commit your
+work first so you can diff and revert it.
 
 ```bash
-# .env
-WITH_REACT=1
+# .env — opt out for a plain legacy Melis, leaving your project untouched
+WITH_REACT=0
 ```
 
-then `docker compose up -d --force-recreate php`. The first boot pulls the
+On the first boot the container pulls the
 `melis-react` branches of `melis-core`, `melis-react-api` and
 `melis-react-override` and patches `application.config.php`; `/melis-react` goes
 live once the platform is installed. The step is idempotent (later boots skip it)
@@ -132,22 +134,31 @@ restarting the container.
 To undo: `git checkout composer.json composer.lock config/application.config.php`
 in your project, `composer install`, and set `WITH_REACT=0`.
 
-### Vite dev server (optional)
+### Vite dev server
 
-Only useful with `WITH_REACT=1`, and only for *developing* the React UI — using
-`/melis-react` needs no Node.js, since PHP serves melis-core's committed
-production build.
+Part of the stack, like in [`install/`](../../install/): `docker compose up -d`
+starts **php, db and vite**, and the dev server is on
+<http://localhost:5173> (`VITE_PORT`) with HMR, proxying `/melis`, `/assets` and
+`/Melis*` to php.
+
+It only matters if you are *developing* the React UI — using `/melis-react` on
+`:8080` needs no Node.js, since PHP serves melis-core's committed production
+build. To skip it:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.vite.yml up -d
-# or:  make up VITE=1 STACK=app/latest
-# → http://localhost:5173  (HMR, proxies /melis, /assets, /Melis* to php)
+docker compose up -d php db      # or: docker compose stop vite
 ```
 
 Because this stack's code is on the host, the sources it serves are the same
-`vendor/melisplatform/melis-core/ui-react` tree you edit in your IDE. After
-editing, `npm run build` regenerates `public/ui-react/` — that is what
-`/melis-react` actually serves.
+`vendor/melisplatform/melis-core/ui-react` tree you edit in your IDE — and so is
+the `node_modules/` it installs, inside your project's `vendor/`. After editing,
+`npm run build` regenerates `public/ui-react/` — that is what `/melis-react`
+actually serves.
+
+It waits (logging `melis-core/ui-react not present yet`) until the first boot has
+installed the `melis-react` branch of melis-core, and reinstalls its deps in place
+whenever Composer replaces that package — including during the web installer's own
+`composer update`.
 
 ## Notes
 

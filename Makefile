@@ -12,7 +12,7 @@
 #   make proxy-up / proxy-down   # start/stop the shared local nginx-proxy
 #   make up PROXY=1              # start a stack behind the shared proxy
 #   make up VITE=1               # add the React (Vite) dev server (prebuilt/fpm;
-#                                #   the install stack always starts it)
+#                                #   install + app/latest always start it)
 #   make adminer / make adminer-stop   # web DB client on http://localhost:8082
 #   make doctor STACK=install    # verify the host bind mounts are really attached
 #                                #   (Rancher Desktop/WSL loses them on restart)
@@ -32,7 +32,7 @@ ifeq ($(PROXY),1)
 COMPOSE_FILES += -f docker-compose.proxy.yml
 endif
 # VITE=1 is a no-op for stacks that already ship the dev server in their base file
-# (install/, where it is not optional) — hence the wildcard guard.
+# (install/ and app/latest, where it is not optional) — hence the wildcard guard.
 ifeq ($(VITE),1)
 ifneq ($(wildcard $(STACK)/docker-compose.vite.yml),)
 COMPOSE_FILES += -f docker-compose.vite.yml
@@ -106,7 +106,7 @@ doctor: ## Check the host bind mounts are really attached in the running contain
 	@set -e; \
 	case "$(STACK)" in \
 	  install)    host="$(CURDIR)/install/melis"; svcs="php vite";; \
-	  app/latest) host="$(CURDIR)/.."; svcs="php";; \
+	  app/latest) host="$(CURDIR)/.."; svcs="php vite";; \
 	  *) echo "[doctor] $(STACK) keeps its app dir in a named volume — immune, nothing to check."; exit 0;; \
 	esac; \
 	rc=0; \

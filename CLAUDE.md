@@ -25,7 +25,7 @@ changes by building/running the relevant stack, not by unit tests.
 | [`prebuilt/`](prebuilt/) | Pulls a **pre-built** image that bakes the skeleton at build time + a MySQL service. No build on the user's machine. | Fastest "just run it" |
 | [`install/`](install/) | **Turnkey build**: builds locally, `composer create-project` the skeleton at first run into `./melis` (editable on host) + MySQL. | Devs who want code locally |
 | [`fpm/`](fpm/) | Production-style **nginx + PHP-FPM + MySQL**, skeleton baked into the image. | More production-like topology |
-| [`app/latest/`](app/latest/) | **Legacy** dev path: mounts an existing Melis project (`../../../`) into a PHP-apache build. React BO supported but opt-in (`WITH_REACT=1`). | Existing projects |
+| [`app/latest/`](app/latest/) | **Legacy** dev path: mounts an existing Melis project (`../../../`) into a PHP-apache build. React BO on by default (`WITH_REACT=1`), like the other stacks. | Existing projects |
 | [`dev/`](dev/) | Per-PHP-version **base images** only (no compose). `dev-{apache,fpm}-{8.1,8.2,8.3,8.4,8.5}`. | Image building blocks |
 | [`local-proxy/`](local-proxy/) | Shared **nginx-proxy** (opt-in) so several stacks share `:80` by hostname. | Running many projects locally |
 
@@ -183,10 +183,18 @@ the vite gotcha below.
 `MELIS_TARGET=http://php` (`http://web` for fpm — its php service is FPM-only) and
 `MELIS_PROXY_HOST=localhost` (Melis' domain routing redirect-loops when the proxied
 Host header carries a port).
-- **`install/` ships it in `docker-compose.yml` itself — always on**, since that's
-  the stack for developing the React UI (code bind-mounted from `./melis`). Opt out
-  with `docker compose up -d php db`. It has **no** `docker-compose.vite.yml`, so
-  the Makefile guards `VITE=1` with a `wildcard` check (no-op there).
+- **`install/` and `app/latest/` ship it in `docker-compose.yml` itself — always
+  on**: both bind-mount their code from the host (`./melis` / `../../../`), so they
+  are the stacks where you actually develop the React UI. Opt out with
+  `docker compose up -d php db`. Neither has a `docker-compose.vite.yml`, so the
+  Makefile guards `VITE=1` with a `wildcard` check (a no-op for them).
+  `app/latest`'s vite was merged in from its override on 2026-07-30; note its
+  `node_modules` lands inside the **user's own** project tree (under `vendor/`,
+  git-ignored). Its supervisor loop carries an extra guard: a missing
+  `composer.json` in the app dir means a detached bind mount (gotcha 12), not a
+  first boot — that stack never creates a project — so it warns and waits instead
+  of `npm ci`-ing into a phantom dir. `make doctor STACK=app/latest` checks php
+  **and** vite, since the two are staged independently.
 - `prebuilt/` and `fpm/` keep it opt-in via `docker-compose.vite.yml` (`-f …` or
   `make up VITE=1`) — their code lives in a named volume, not on the host.
 

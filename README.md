@@ -200,6 +200,9 @@ server talks to your real Melis instance. On first boot it restarts a few times
 while the skeleton downloads — that's expected, it's waiting for the sources. Don't
 want it? `docker compose up -d php db`, or `docker compose stop vite`.
 
+`app/latest/` starts it the same way, for the same reason — its code is your own
+project, bind-mounted from the host.
+
 For the other stacks (`prebuilt/`, `fpm/`) the dev server stays opt-in, since their
 code lives in a named volume rather than on your host:
 
