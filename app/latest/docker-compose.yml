@@ -112,7 +112,7 @@ services:
                if [ ! -f node_modules/.package-lock.json ] || [ ! -f node_modules/vite/package.json ] ||
                   [ package-lock.json -nt node_modules/.package-lock.json ]; then
                  npm ci --no-audit --no-fund || { echo '[vite] npm ci failed — retrying in 15s'; sleep 15; continue; };
-                 chown -R 33:33 node_modules;
+                 chown -R ${HOST_UID:-1000}:${HOST_GID:-1000} node_modules;
                fi;
                npm run dev -- --host 0.0.0.0 & V=$$!;
                while kill -0 $$V 2>/dev/null; do

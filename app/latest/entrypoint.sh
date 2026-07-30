@@ -147,17 +147,29 @@ done
 #     need sudo to edit your files afterwards (`sudo chown -R $(id -u):$(id -g) .`
 #     reverses it, until the next boot re-applies this).
 #
-#     The guard below is only an optimisation (skip the walk when it is already
-#     correct), not an opt-out: without this the installer cannot run at all.
-if ! su -s /bin/sh www-data -c \
-     "test -w '$APP_DIR' && test -w '$APP_DIR/composer.json' && test -w '$APP_DIR/vendor'" 2>/dev/null; then
-  echo "[melis-docker-react] Making the mounted project writable by www-data (needed by the web installer)."
-  # Skip this repo itself — it is cloned INSIDE your project (that is how the
-  # ../../../ bind mount finds it), Melis never writes to it, and chowning it
-  # would mean needing sudo just to edit .env or docker-compose.yml.
-  find "$APP_DIR" \( -name 'melis-docker' -o -name 'melis-docker-react' \) -prune \
-      -o -exec chown www-data:www-data {} + 2>/dev/null || true
-fi
+#     UNCONDITIONAL, like install/entrypoint.sh's `chown -R www-data:www-data
+#     "$APP_DIR"`. It used to be guarded by a `test -w` probe on $APP_DIR,
+#     composer.json and vendor as an "optimisation" — but those three paths are
+#     exactly the ones that are already yours, so the probe passed while whole
+#     subtrees underneath were not www-data at all, and the walk never ran:
+#       - step 2 (`enable-react.sh`) runs Composer as ROOT, and Composer REPLACES
+#         `vendor/melisplatform/melis-core` wholesale every time it touches the
+#         package → thousands of root:root files inside your working copy;
+#       - anything written by a boot from before the HOST_UID remap stays at
+#         uid 33.
+#     Neither is visible to the probe. Result: `EACCES: permission denied` in the
+#     editor on e.g. vendor/melisplatform/melis-core/ui-react/src/... — the React
+#     UI source you are meant to be editing. Observed 2026-07-30.
+#
+#     With the remap in place (HOST_UID, default 1000) this resolves to YOUR uid,
+#     so a walk on every boot is also the repair path for a tree already spoiled
+#     by either case above — no `sudo chown` needed.
+echo "[melis-docker-react] Making the mounted project writable by www-data (needed by the web installer)."
+# Skip this repo itself — it is cloned INSIDE your project (that is how the
+# ../../../ bind mount finds it), Melis never writes to it, and chowning it
+# would mean needing sudo just to edit .env or docker-compose.yml.
+find "$APP_DIR" \( -name 'melis-docker' -o -name 'melis-docker-react' \) -prune \
+    -o -exec chown www-data:www-data {} + 2>/dev/null || true
 
 echo "[melis-docker-react] ============================================================"
 echo "[melis-docker-react]  Melis (app/latest) is ready. Open http://localhost:${HOST_PORT:-8080}"
