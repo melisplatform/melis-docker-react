@@ -79,8 +79,7 @@ git clone https://github.com/melisplatform/melis-docker-react.git melis-docker-r
 # 2. configure
 cd melis-docker-react/app/latest
 cp .env.example .env
-#    edit APP_NAME + DB creds to match your project, and set
-#    GITHUB_TOKEN=ghp_...   (the React step resolves 3 GitHub repos)
+#    edit APP_NAME + DB creds to match your project, and optionally set
 #    WITH_REACT=0           (only if you do NOT want the React back-office)
 
 # 3. build + start
@@ -92,7 +91,6 @@ them inside your working copy:
 
 ```gitignore
 melis-docker-react/    # this repo, now nested in your project
-auth.json              # written by the guard; contains your GITHUB_TOKEN
 data/logs/             # installer log
 ```
 
@@ -100,9 +98,9 @@ The React step is idempotent and never fatal: if it fails you keep the legacy
 back-office and can retry by restarting the container. `/melis-react` goes live once
 the platform is installed.
 
-> **Set `GITHUB_TOKEN` in `.env` *before* the first build** — the build pre-warms
-> Composer's metadata cache and needs it. Without it the build still succeeds, but
-> the first boot spends ~12 minutes resolving repositories before Apache answers.
+> **No GitHub token is needed.** Every package — the React modules and the four
+> `melisplatform/laminas-*` forks — resolves from Packagist, so the build's Composer
+> cache pre-warm runs unauthenticated with no rate limit.
 
 > **Windows:** a `start-docker.bat` helper is provided at the repo root for this path.
 >
@@ -151,11 +149,10 @@ inside the React shell). `install/` does this on first boot; `prebuilt/` and `fp
 bake it into the image at build time. The two modules stay dormant until the web
 installer completes, then activate on the next request.
 
-> **`GITHUB_TOKEN` is required with `WITH_REACT=1`, and it needs the `repo` scope** —
-> `melis-react-api` and `melis-react-override` are **private** repositories. Without
-> it Composer falls back to the git driver and the step dies with
-> `fatal: could not read Username for 'https://github.com'`. (A scope-less token is
-> enough when `WITH_REACT=0`, where it only lifts the 60 requests/hour API limit.)
+> **No GitHub token is needed.** All three React packages are public and resolved
+> from **Packagist**, as are the four `melisplatform/laminas-*` forks the skeleton
+> requires. Composer makes no GitHub API calls, so there is no rate limit to
+> authenticate past.
 
 Not interested in React? `WITH_REACT=0` in `.env` (turnkey stack), or build the
 image with `--build-arg WITH_REACT=0` (pre-built/fpm) — you get a plain legacy Melis.
@@ -321,13 +318,13 @@ breaks Melis' flyway/JDBC URL. Credentials are whatever you set in `.env`
 `utf8mb4_general_ci` (these compose files already do).
 
 **The installer's "downloading modules" step takes forever** — that step runs
-Composer inside the request, against 7 GitHub `vcs` repositories, so it depends on a
-warm metadata cache (which the image builds) and an authenticated GitHub API. If it
-crawls (~12 min instead of ~30 s):
+Composer inside the request, so it depends on a warm metadata cache (which the image
+builds at build time). If it crawls (~12 min instead of ~30 s):
 
-- **Set `GITHUB_TOKEN` in `.env`, then rebuild** (`docker compose up -d --build`) —
-  the cache pre-warm needs the token, and an image built without it ships an empty
-  cache.
+- **Rebuild so the cache pre-warm runs** (`docker compose up -d --build`) — an image
+  built with a failed pre-warm ships an empty cache.
+- Check `SKELETON_VERSION`: an older skeleton still declares four GitHub `vcs`
+  repositories, whose refs Composer enumerates over the rate-limited GitHub API.
 - Check the step's Composer output in `data/logs/melis-installer.log` (the installer
   guard saves what the wizard discards) for "Proceeding without cache".
 

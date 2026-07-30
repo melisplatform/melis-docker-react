@@ -20,12 +20,12 @@ services:
         PHP_VERSION: ${PHP_VERSION:-8.3}
         WITH_XDEBUG: ${WITH_XDEBUG:-0}
         WITH_REACT: ${WITH_REACT:-1}
-      # Passes GITHUB_TOKEN to the build's Composer cache pre-warm WITHOUT baking it
-      # into a layer. Without it that step runs unauthenticated (60 GitHub API
-      # req/hour) and usually can't finish — the build still succeeds, but the first
-      # web install then pays the full ~12 min uncached module step.
-      secrets:
-        - github_token
+        SKELETON_VERSION: ${SKELETON_VERSION-dev-test/removed-forks}
+        # Remap www-data to your host uid/gid so ./melis stays editable on the host
+        # (the entrypoint chowns the app dir to www-data for the web installer).
+        # Set HOST_UID=33 in .env to keep the classic www-data ownership.
+        HOST_UID: ${HOST_UID:-1000}
+        HOST_GID: ${HOST_GID:-1000}
     container_name: ${MELIS_CONTAINER_NAME:-melis}-php
     # On Linux, let Xdebug reach your IDE on the host (no-op on macOS/Windows):
     extra_hosts:
@@ -53,16 +53,14 @@ services:
       APP_NAME: ${APP_NAME:-melis}
       TZ: ${TZ:-Europe/Paris}
       HOST_PORT: ${HOST_PORT:-8080}
+      # Used by the entrypoint's create-project on the first boot.
+      SKELETON_VERSION: ${SKELETON_VERSION-dev-test/removed-forks}
       # NOTE: host without :port — keep it clean (a "host:port" value breaks flyway/JDBC)
       MYSQL_HOST: ${MELIS_CONTAINER_NAME:-melis}-db
       MYSQL_HOSTNAME: ${MELIS_CONTAINER_NAME:-melis}-db
       MYSQL_DATABASE: ${MYSQL_DATABASE:-melis}
       MYSQL_USER: ${MYSQL_USER:-melis}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-melis}
-      # Lifts Composer off the 60/hour unauthenticated GitHub API limit that
-      # otherwise breaks the web installer's module step — and, in this repo, the
-      # React enablement step (3 more GitHub vcs repos). See .env.example.
-      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       # React back-office (/melis-react): enabled by default, set 0 for legacy-only.
       WITH_REACT: ${WITH_REACT:-1}
       MELIS_PLATFORM: ${MELIS_PLATFORM:-local}
@@ -198,12 +196,6 @@ services:
     # container back an empty staging dir after a WSL/Rancher restart. The
     # supervisor loop above is the crash net instead — it never exits.
     restart: "no"
-
-# Build-time only (see the php service's build.secrets): never mounted into a
-# running container, never written to an image layer.
-secrets:
-  github_token:
-    environment: GITHUB_TOKEN
 
 networks:
   melis:

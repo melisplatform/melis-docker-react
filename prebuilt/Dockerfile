@@ -17,10 +17,16 @@ ARG APP_NAME=melis
 ARG TZ=Europe/Paris
 # Pin the skeleton version for reproducible images (override at build:
 #   --build-arg SKELETON_VERSION="^5.3").  Empty = latest stable.
-ARG SKELETON_VERSION=
+# TEMPORARY DEFAULT — `dev-test/removed-forks` is the skeleton branch that drops the
+# four laminas `vcs` repositories in favour of the Packagist-published
+# melisplatform/laminas-* forks, which is what makes GITHUB_TOKEN unnecessary.
+# Set back to empty once that branch is merged and released.
+ARG SKELETON_VERSION=dev-test/removed-forks
+# Exported so the entrypoint's defensive create-project uses the same version.
 ENV APP_NAME=${APP_NAME} \
     TZ=${TZ} \
-    COMPOSER_ALLOW_SUPERUSER=1
+    COMPOSER_ALLOW_SUPERUSER=1 \
+    SKELETON_VERSION=${SKELETON_VERSION}
 
 WORKDIR /var/www/${APP_NAME}
 
@@ -90,20 +96,16 @@ RUN if [ -n "${SKELETON_VERSION}" ]; then \
 # Switches melis-core to its public `melis-react` branch — which ships the COMMITTED
 # production React build in public/ui-react/, so no Node.js is needed in this image —
 # and adds the MelisReactApi + MelisReactOverride modules (see conf/enable-react.sh).
-# Disable with --build-arg WITH_REACT=0. Pass a GitHub token as a BuildKit secret
-# (never baked into a layer) to stay off the 60 req/h unauthenticated API limit:
-#   GITHUB_TOKEN=ghp_xxx docker build --secret id=github_token,env=GITHUB_TOKEN .
+# Disable with --build-arg WITH_REACT=0. No GitHub credentials needed — all three
+# React packages resolve from Packagist.
 ARG WITH_REACT=1
-RUN --mount=type=secret,id=github_token \
-    if [ "$WITH_REACT" = "1" ]; then \
-        GITHUB_TOKEN="$(cat /run/secrets/github_token 2>/dev/null || true)" \
+RUN if [ "$WITH_REACT" = "1" ]; then \
         bash /melis-conf/enable-react.sh /var/www/${APP_NAME} \
         && chown -R www-data:www-data /var/www/${APP_NAME} ; \
     fi
 
 # Hand the cache these root-run builds just filled to www-data, so the web
 # installer's own Composer runs read it instead of re-downloading everything.
-# (auth.json is never written here — the token stays a build secret.)
 RUN chown -R www-data:www-data /composer
 
 COPY ./entrypoint.sh /usr/local/bin/entrypoint.sh

@@ -43,7 +43,6 @@ docker compose up -d --build     # confirms the mount + DB work
 #    Make sure your project is committed first: this step rewrites your
 #    composer.json, composer.lock and config/application.config.php.
 #    Then edit .env by hand:   WITH_REACT=1
-#                              GITHUB_TOKEN=ghp_...   (scope: repo)
 docker compose up -d
 ```
 
@@ -54,12 +53,11 @@ them inside your working copy:
 
 ```gitignore
 melis-docker-react/    # this repo, now nested in your project
-auth.json              # written by the guard; contains your GITHUB_TOKEN
 data/logs/             # installer log
 ```
 
-Do **not** `git add -A` at your project root after a boot: besides `auth.json`, the
-container also writes `cache/` and may touch `config/`.
+Do **not** `git add -A` at your project root after a boot: the container also writes
+`cache/` and may touch `config/`.
 
 Open <http://localhost:8080> and follow the native Melis web installer
 (DB host = `<MELIS_CONTAINER_NAME>-db`, **without** `:port`) — or read
@@ -119,7 +117,6 @@ host**. Commit your work first.
 ```bash
 # .env
 WITH_REACT=1
-GITHUB_TOKEN=ghp_...      # required — see below
 ```
 
 then `docker compose up -d --force-recreate php`. The first boot pulls the
@@ -129,11 +126,8 @@ live once the platform is installed. The step is idempotent (later boots skip it
 and never fatal — if it fails you keep the legacy back-office and can retry by
 restarting the container.
 
-> **`GITHUB_TOKEN` needs the `repo` scope.** `melis-react-api` and
-> `melis-react-override` are **private** repositories; without a token Composer
-> falls back to the git driver and fails with
-> `fatal: could not read Username for 'https://github.com'`.
-> (`melis-core` itself is public.)
+> **No GitHub token is needed.** All three React packages are public and resolved
+> from Packagist, so this step makes no GitHub API calls.
 
 To undo: `git checkout composer.json composer.lock config/application.config.php`
 in your project, `composer install`, and set `WITH_REACT=0`.

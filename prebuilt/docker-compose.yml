@@ -8,8 +8,7 @@ services:
   php:
     # Default = the React edition of the image (this repo bakes /melis-react in).
     # NOT yet published on Docker Hub — until it is, build it locally:
-    #   docker build --secret id=github_token,env=GITHUB_TOKEN \
-    #       -t melisplatform/melis-docker-react:latest .
+    #   docker build -t melisplatform/melis-docker-react:latest .
     # Set MELIS_IMAGE=melisplatform/melis-docker:latest in .env for the published
     # LEGACY image instead (no React back-office).
     image: ${MELIS_IMAGE:-melisplatform/melis-docker-react:latest}
@@ -22,9 +21,7 @@ services:
     #     TZ: ${TZ:-Europe/Paris}
     #     PHP_VERSION: ${PHP_VERSION:-8.3}   # 8.3 (default) | 8.4 (experimental). 8.5 not usable yet.
     #     WITH_REACT: ${WITH_REACT:-1}       # bake the React back-office (/melis-react)
-    #   secrets: [github_token]              # + uncomment the top-level secrets: block
-    #                                        #   below; needed or the React step hits
-    #                                        #   the 60 req/h GitHub API limit.
+    #     SKELETON_VERSION: ${SKELETON_VERSION-dev-test/removed-forks}
     container_name: ${MELIS_CONTAINER_NAME:-melis}-php
     depends_on:
       db:
@@ -49,16 +46,15 @@ services:
       # Read the baked conf.d first, then the mounted conf/ (later wins).
       PHP_INI_SCAN_DIR: "/usr/local/etc/php/conf.d:/melis-conf"
       HOST_PORT: ${HOST_PORT:-8080}
+      # Used only by the entrypoint's defensive create-project (app dir empty, e.g.
+      # a host dir mounted over the baked skeleton). Empty = latest stable.
+      SKELETON_VERSION: ${SKELETON_VERSION-dev-test/removed-forks}
       # NOTE: host without :port — keep it clean (a "host:port" value breaks flyway/JDBC)
       MYSQL_HOST: ${MELIS_CONTAINER_NAME:-melis}-db
       MYSQL_HOSTNAME: ${MELIS_CONTAINER_NAME:-melis}-db
       MYSQL_DATABASE: ${MYSQL_DATABASE:-melis}
       MYSQL_USER: ${MYSQL_USER:-melis}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-melis}
-      # Lifts Composer off the 60/hour unauthenticated GitHub API limit that
-      # otherwise breaks the web installer's module step — and, in this repo, the
-      # React enablement (3 more GitHub vcs repos). See .env.example.
-      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       # React back-office (/melis-react): baked into the image; this only gates the
       # entrypoint's defensive re-enable (e.g. an app volume from the old image).
       WITH_REACT: ${WITH_REACT:-1}
@@ -94,12 +90,6 @@ services:
     networks:
       - melis
     restart: always
-
-# Build-time only, for the commented-out build: block above (this stack pulls the
-# published image by default, so nothing here is used unless you build locally).
-# secrets:
-#   github_token:
-#     environment: GITHUB_TOKEN
 
 networks:
   melis:

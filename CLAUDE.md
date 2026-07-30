@@ -75,12 +75,15 @@ GitHub **`melis-react` branches**:
 **How this repo enables it** (`conf/enable-react.sh` + `conf/enable-react.php`,
 identical in `install/`/`prebuilt/`/`fpm/`, both idempotent):
 
-1. `composer config repositories.*` for the three GitHub repos, then
-   `composer require -W "melisplatform/melis-core:dev-melis-react as 5.3.999"
+1. `composer require -W "melisplatform/melis-core:dev-melis-react as 5.3.999"
    melis-react-api:dev-melis-react melis-react-override:dev-melis-react`. The inline
    alias keeps every `^5.3` constraint satisfied AND stops the installer's own
    `composer update --root-reqs` from rolling melis-core back to a stable dist.
-   `GITHUB_TOKEN` is passed via `COMPOSER_AUTH` env only (never written to disk).
+   **No `repositories` entries** — all three are on Packagist, melis-core's
+   `dev-melis-react` branch included (verified 2026-07-30), so Composer never
+   enumerates their refs through the GitHub API. Do not add `vcs` entries back.
+   No GitHub authentication of any kind — the `COMPOSER_AUTH`/`GITHUB_TOKEN` plumbing
+   was removed 2026-07-30 (see the token section below).
 2. `enable-react.php` patches `config/application.config.php`: appends the two
    modules **after** `getModules()` (so the override wins the config merge) —
    **never** in `config/melis.module.load.php`, which the Modules tool rewrites and
@@ -91,8 +94,8 @@ identical in `install/`/`prebuilt/`/`fpm/`, both idempotent):
 
 Where it runs: `install/` → entrypoint step 2b on first boot (`WITH_REACT=1`
 default, in `.env`); `prebuilt/`+`fpm/` → Dockerfile right after the skeleton bake
-(`ARG WITH_REACT=1`; GitHub token via BuildKit secret `github_token`, not a build
-arg) + a defensive entrypoint re-run for app volumes seeded from pre-React images;
+(`ARG WITH_REACT=1`) + a defensive entrypoint re-run for app volumes seeded from
+pre-React images;
 `app/latest/` → entrypoint step 2, **`WITH_REACT=1` by default** like the others
 (changed 2026-07-28 on request; it was `0`). Mind what that means there: the app dir
 is the user's own pre-existing project (bind-mounted from `../../../`), so the first
@@ -103,13 +106,74 @@ does run the same **cache pre-warm** as `install/`, for the same reason: without
 the entrypoint's React enablement resolves cold and Apache doesn't start for ~12 min,
 during which the published port returns an empty response (observed).
 
-**Two of the three React repos are PRIVATE** (`melis-react-api`,
-`melis-react-override`; `melis-core` is public). `GITHUB_TOKEN` therefore needs the
-**`repo` scope** whenever `WITH_REACT=1` — it is not merely a rate-limit lift there.
-Without it Composer's GitHub API call 404s, it falls back to the git driver, and the
-require dies with `fatal: could not read Username for 'https://github.com'`. The
-"no scopes needed" note in the `.env.example` files applies only to the
-`WITH_REACT=0` case (the four public laminas forks).
+## No GitHub token — everything resolves from Packagist (done 2026-07-30)
+
+`GITHUB_TOKEN` and all its plumbing were **removed** on 2026-07-30. Do not
+reintroduce it, and do not add a `vcs` repository to any stack — that is what would
+bring the whole problem back (see gotcha 9). What changed, all upstream of this repo:
+
+- **The three React packages are public and on Packagist** — `melis-react-api` and
+  `melis-react-override` at `v6.0.0` plus their `dev-melis-react` branches, and
+  melis-core's `dev-melis-react` branch was already indexed. So the old
+  `fatal: could not read Username for 'https://github.com'` failure is gone, and
+  `enable-react.sh` needs no `repositories` entries.
+- **The four laminas forks are on Packagist as `melisplatform/laminas-*`**, each
+  `replace`-ing its upstream package (`replace: {"laminas/laminas-X": "self.version"}`)
+  so every `laminas/laminas-X` constraint in the tree is satisfied by the fork and
+  upstream is *excluded* rather than installed alongside. Versions: mail `2.26.1`,
+  mime `2.13.1`, crypt `3.13.1`, file `2.14.1`.
+- **The skeleton dropped its `repositories` block** and requires the forks by name.
+  Currently on the branch `dev-test/removed-forks` (commit `c7fb2e3`), which this repo
+  targets via `SKELETON_VERSION` — a build ARG + compose env in all four stacks.
+  **`SKELETON_VERSION=` (empty) = latest stable**, which is still v5.3.7 and STILL
+  declares the four `vcs` repos: that path is slow and rate-limit-prone with no token.
+  Revert the default to empty once the branch is merged and released.
+  That skeleton branch also pins `config.platform.php = 8.3.0` — needed, or its lock
+  picks `symfony/console` v8 (php >=8.4.1) and gotcha 10 lands in the lock file.
+
+Verified end-to-end with **no token and no credentials** (2026-07-30):
+`create-project` from the branch, then `enable-react.sh`'s require — all three React
+packages on `dev-melis-react`, melis-core's committed React build present, and exactly
+one psr-4 path per namespace for all four forks with no `vendor/laminas/laminas-*`
+duplicate.
+
+**The crypt trap, for the record** — it failed SILENTLY, which is why it took a real
+install to see. The skeleton first required `melisplatform/laminas-crypt: ^4.0`.
+melis-core requires `laminas/laminas-crypt: ^3.11`, which `4.1.1`'s `replace` (=4.1.1)
+does not satisfy, so the solver backtracked to **`4.1.0` — which carries no `replace`**
+— and then installed upstream `laminas/laminas-crypt 3.12.0` alongside it:
+
+    'Laminas\\Crypt\\' => array(
+        $vendorDir . '/melisplatform/laminas-crypt/src',   // fork 4.1.0
+        $vendorDir . '/laminas/laminas-crypt/src',         // upstream 3.12.0
+    ),
+
+Two copies of one namespace, no error. `^3.13` did not help either while `3.13.0` was
+the newest 3.x tag (no `replace`). Fixed by tagging **`3.13.1`** off the `3.13.x`
+branch with the rename + `replace`, and setting the skeleton to `^3.13`.
+Check after any change here — exactly one path is correct:
+`grep -A2 "Laminas..Crypt" vendor/composer/autoload_psr4.php`.
+
+**Why crypt stays on the 3.x line:** crypt 4.x removes exactly one class,
+`Laminas\Crypt\Symmetric\Mcrypt`, and melis-core instantiates it in LIVE code at
+`MelisAuthController.php:706` — the legacy-password migration path, reached on login
+when the stored password is not a 60-char bcrypt hash AND
+`/meliscore/datas/default/accounts/use_mcrypt` is on. Fresh installs never hit it; a
+carried-over database does. So relaxing melis-core to `^3.11 || ^4.0` is not a
+constraint tweak, it needs that login path ported off Mcrypt (`ext-mcrypt` was dropped
+in PHP 7.2). Note the duplicate above did NOT paper over it either:
+`SymmetricInterface` was re-typed in 4.x (`encrypt(string): string`,
+`setKey(string): static`, …), so `Mcrypt` from 3.12.0 against the 4.1.0 interface
+fatals on declaration incompatibility.
+
+Still-open item upstream: `melisplatform/laminas-crypt` `4.1.0` is published **without**
+`replace`, so it remains selectable by a `^4.0` constraint and would silently duplicate
+again. Either delete that tag or retag it with `replace`. `4.1.1` is correctly formed
+and worth keeping as the forward path.
+
+The `url.https://github.com/.insteadOf git@github.com:` git config (gotcha 6) is kept
+deliberately: it costs nothing and still covers the `SKELETON_VERSION=` path, whose
+skeleton declares `git@github.com:` fork URLs.
 
 **Vite dev server**: a `node:${NODE_VERSION:-22}-alpine` service on
 `${VITE_PORT:-5173}` running `npm ci && npm run dev` in
@@ -153,10 +217,10 @@ later resolve as `www-data`: **735 s → 31.8 s**. Never fatal — a failed pre-
 only means a slower first install. Relying on the entrypoint alone is not enough:
 it skips Composer entirely when it finds an existing project in the mounted
 `./melis`, which leaves the cache empty and the wizard slow (observed).
-`docker compose up --build` passes `GITHUB_TOKEN` to it via a Compose **build
-secret** (`secrets: github_token: environment: GITHUB_TOKEN`) — unauthenticated the
-pre-warm hits the 60 req/h limit and gives up. A Composer run with no token fails in
-~2 s, which is easy to mistake for a fast success when timing things.
+It needs no credentials: with the fork-free skeleton everything resolves from
+Packagist. (Historically it took `GITHUB_TOKEN` via a Compose build secret, because
+unauthenticated it hit the 60 req/h GitHub API limit and gave up in ~2 s — easy to
+mistake for a fast success when timing things.)
 
 **`enable-react.sh` pins `laminas/laminas-serializer:2.17` — TEMPORARY, remove when
 upstream allows.** melis-core allows `^2.17 || ^3.0`; resolving it alone (which is
@@ -205,8 +269,8 @@ React-specific gotchas (each cost a debugging round — respect them):
   in `vendor/`, not under `public/`, and are streamed by MelisAssetManager via PHP.
 - The React modules must **never** end up in `config/melis.module.load.php` (the
   Modules tool would silently drop them on its next save).
-- `GITHUB_TOKEN` matters even more here: 7 GitHub `vcs` repos total (4 laminas
-  forks + 3 React repos) vs 60 unauthenticated API requests/hour.
+- Enabling React costs **no** GitHub API calls: all three packages come from
+  Packagist. Do not reintroduce `vcs` repositories for them.
 - **Rancher Desktop / WSL: pre-create `install/melis` before the first `up`.**
   If the bind-mount source doesn't exist, Rancher's mount helper stages a SEPARATE
   empty dir per container — php and vite silently don't share the app dir and the
@@ -299,17 +363,23 @@ React-specific gotchas (each cost a debugging round — respect them):
    exactly `2.17`), and any packagist/GitHub hiccup during requirement resolution.
    Mitigated by `conf/melis-installer-guard.php` (below); the real fixes are upstream
    (check the exit code; don't activate a module `getModulePath()` can't find).
-9. **Set `GITHUB_TOKEN` — this is the trigger behind gotcha 8.** The skeleton declares
-   four `vcs` repositories (the melisplatform `laminas-mail/mime/crypt/file` forks) and
-   the lock genuinely resolves those four packages from them, so **every** Composer
-   resolution the installer runs queries the GitHub API for all four. Unauthenticated
-   that is **60 requests/hour per public IP**; once spent, Composer can't prompt under
-   `--no-interaction` and throws `Could not authenticate against github.com`
-   (`AuthHelper.php` line 145) — *before* `updateFile()`, so `composer.json` is never
-   written, the following `composer update` only bumps the 6 skeleton packages, and
-   gotcha 8 plays out. Observed live. A classic token with **no scopes** lifts the limit
-   to 5000/h; `GITHUB_TOKEN` in `.env` → the guard writes `auth.json`.
-   **`use-github-api false` is NOT a token-free workaround** — the git driver then fails
+9. **No `vcs` repositories — this is what defused gotcha 8's main trigger.** RESOLVED
+   2026-07-30; kept because reintroducing a `vcs` repo brings the whole failure back.
+   The skeleton used to declare four `vcs` repositories (the melisplatform
+   `laminas-mail/mime/crypt/file` forks) and the lock really did resolve those four
+   packages from them, so **every** Composer resolution the installer ran enumerated
+   their refs through the GitHub API. Unauthenticated that is **60 requests/hour per
+   public IP**; once spent, Composer can't prompt under `--no-interaction` and throws
+   `Could not authenticate against github.com` (`AuthHelper.php` line 145) — *before*
+   `updateFile()`, so `composer.json` is never written, the following `composer update`
+   only bumps the 6 skeleton packages, and gotcha 8 plays out. Observed live.
+   Now: the forks are on Packagist as `melisplatform/laminas-*` (each `replace`-ing its
+   upstream package), the skeleton requires them by name, and **no stack declares a
+   `vcs` repository**. Zero GitHub API calls, so `GITHUB_TOKEN` was removed entirely.
+   Caveat: `SKELETON_VERSION=` (empty → released skeleton) still points at a skeleton
+   WITH those repositories, so that path is slow and rate-limit-prone until the release
+   lands. Same for `app/latest` if the user's own project still declares them.
+   **`use-github-api false` was never a token-free workaround** — the git driver fails
    with `No valid composer.json was found in any branch or tag of …/laminas-crypt`.
    Tested; do not re-add it.
 10. **`--ignore-platform-reqs` defeats `config.platform.php`** — the flag ignores the

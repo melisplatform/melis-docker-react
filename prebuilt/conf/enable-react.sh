@@ -1,7 +1,8 @@
 #!/bin/bash
 # melis-docker-react — enable the React back-office (/melis-react) on a Melis skeleton.
 #
-# The React back-office lives on public GitHub `melis-react` branches:
+# The React back-office ships as three public Packagist packages (melis-core on its
+# `melis-react` branch, the other two tagged):
 #   - melisplatform/melis-core        : ships the SPA source (ui-react/) AND the
 #     COMMITTED production build (public/ui-react/, served by MelisAssetManager at
 #     /MelisCore/ui-react/) — so serving /melis-react needs no Node.js at runtime.
@@ -10,10 +11,12 @@
 #     excluded_routes) + the iframe mechanism that shows legacy tools in the shell.
 #
 # This script (idempotent — exits fast once enabled):
-#   1. adds the three GitHub repos to composer.json and requires the branches
-#      (melis-core pinned with an inline alias so every other module's ^5.3
-#      constraint stays satisfied, and so the web installer's later
-#      `composer update --root-reqs` cannot roll it back to a stable dist);
+#   1. requires the three packages from Packagist (melis-core pinned with an inline
+#      alias so every other module's ^5.3 constraint stays satisfied, and so the
+#      web installer's later `composer update --root-reqs` cannot roll it back to a
+#      stable dist). No `repositories` entries are needed: all three packages —
+#      including melis-core's `dev-melis-react` branch — are indexed on Packagist,
+#      so Composer never touches the GitHub API to enumerate their refs;
 #   2. patches config/application.config.php (see enable-react.php next to this
 #      file) so the two modules load once the platform is installed.
 #
@@ -35,29 +38,12 @@ echo "[melis-docker-react] Enabling the React back-office (/melis-react)..."
 
 export COMPOSER_ALLOW_SUPERUSER=1
 
-# GitHub token: passed to Composer via COMPOSER_AUTH (environment only — never
-# written to disk, so it cannot leak into an image layer or the app volume).
-# Strip any surrounding whitespace/CR first: .env files edited on Windows carry
-# CRLF line endings, and a stray \r inside the JSON string makes Composer reject
-# COMPOSER_AUTH with "environment variable is malformed, should be a valid JSON
-# object" — which fails the whole require. (Observed on a CRLF prebuilt/.env.)
-GITHUB_TOKEN="$(printf '%s' "${GITHUB_TOKEN:-}" | tr -d '[:space:]')"
-if [ -n "${GITHUB_TOKEN}" ]; then
-    export COMPOSER_AUTH="{\"github-oauth\":{\"github.com\":\"${GITHUB_TOKEN}\"}}"
-else
-    echo "[melis-docker-react] WARNING: no GITHUB_TOKEN set — this step will almost certainly"
-    echo "[melis-docker-react]   FAIL. melis-react-api and melis-react-override are PRIVATE"
-    echo "[melis-docker-react]   repositories: without a token (scope 'repo') Composer falls back"
-    echo "[melis-docker-react]   to the git driver and dies with"
-    echo "[melis-docker-react]     fatal: could not read Username for 'https://github.com'"
-    echo "[melis-docker-react]   A token is also what keeps the 7 GitHub 'vcs' repositories this"
-    echo "[melis-docker-react]   project resolves off the unauthenticated API limit (60 req/h)."
-    echo "[melis-docker-react]   Set GITHUB_TOKEN in .env and restart."
-fi
-
-composer config repositories.melis-core            vcs https://github.com/melisplatform/melis-core
-composer config repositories.melis-react-api       vcs https://github.com/melisplatform/melis-react-api
-composer config repositories.melis-react-override  vcs https://github.com/melisplatform/melis-react-override
+# No GitHub authentication here, and no `composer config repositories.*` — by design.
+# melis-core, melis-react-api and melis-react-override all resolve from PACKAGIST
+# (melis-core's `dev-melis-react` branch included), so Composer never enumerates a
+# repository's refs through the GitHub API and there is no 60 req/hour limit to hit.
+# Adding a `vcs` entry back would re-introduce exactly the problem GITHUB_TOKEN used
+# to work around. Don't.
 
 # -W (--with-all-dependencies): switching melis-core to the branch may have to move
 # transitive deps that a partial update would refuse to touch (same lesson as the

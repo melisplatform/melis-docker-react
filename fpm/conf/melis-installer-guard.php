@@ -78,34 +78,26 @@ if (PHP_SAPI === 'cli') {
             return $out;
         };
 
-        // (a) THE fix for the installer's "Could not authenticate against github.com".
-        //     The skeleton declares four `vcs` repositories (the melisplatform
-        //     laminas-mail/mime/crypt/file forks) and the lock really does resolve
-        //     laminas-mail/mime/crypt/file from them, so EVERY Composer resolution
-        //     the installer runs queries the GitHub API for all four. Unauthenticated
-        //     that is 60 calls/hour per public IP; once spent, Composer cannot prompt
-        //     for credentials under --no-interaction and throws — *before* it writes
-        //     composer.json, so `addModulesToComposer` silently installs nothing and
-        //     the platform ends up with modules activated but absent.
-        //     A token raises the limit to 5000/hour and also covers dist downloads.
-        //     Set GITHUB_TOKEN in .env (a classic token with no scopes is enough for
-        //     public repos). auth.json is what the in-process Composer reads.
-        //     NB: `use-github-api false` looks like a token-free alternative — it is
-        //     not. The git driver then fails with "No valid composer.json was found in
-        //     any branch or tag of .../laminas-crypt". Verified; do not re-add it.
-        $token = (string) getenv('GITHUB_TOKEN');
-        if ($token !== '' && !is_file($app . '/auth.json')) {
-            @file_put_contents($app . '/auth.json',
-                json_encode(['github-oauth' => ['github.com' => $token]], JSON_PRETTY_PRINT) . "\n");
-            @chmod($app . '/auth.json', 0600);
-            @chown($app . '/auth.json', 'www-data');
-            error_log('[melis-docker-react] wrote auth.json from GITHUB_TOKEN — the installer'
-                . ' will not hit the unauthenticated GitHub API limit');
-        } elseif ($token === '') {
-            error_log('[melis-docker-react] no GITHUB_TOKEN set: Composer will use the'
-                . ' unauthenticated GitHub API (60 req/hour per IP). If the installer'
-                . ' reports "Could not authenticate against github.com", set one in .env.');
-        }
+        // (a) No GitHub authentication is set up here any more, and none is needed.
+        //     Historically the skeleton declared four `vcs` repositories (the
+        //     melisplatform laminas-mail/mime/crypt/file forks), so EVERY Composer
+        //     resolution the installer ran enumerated their refs through the GitHub
+        //     API — 60 calls/hour unauthenticated. Once spent, Composer could not
+        //     prompt under --no-interaction and threw *before* writing composer.json,
+        //     so `addModulesToComposer` silently installed nothing and the platform
+        //     ended up with modules activated but absent. That was the trigger behind
+        //     the repair below.
+        //     Those forks are now published on Packagist as `melisplatform/laminas-*`
+        //     (each `replace`-ing its upstream package), the skeleton requires them by
+        //     name, and no `vcs` repository is declared — by the skeleton or by
+        //     enable-react.sh. Composer therefore makes no GitHub API calls at all and
+        //     there is no rate limit to authenticate past.
+        //     If you point SKELETON_VERSION at an OLDER skeleton that still declares
+        //     those `vcs` repositories, the old failure mode returns; the repair below
+        //     still covers it, but the resolve will be slow and may exhaust the limit.
+        //     NB: `use-github-api false` was never a token-free alternative — the git
+        //     driver fails with "No valid composer.json was found in any branch or tag
+        //     of .../laminas-crypt". Verified; do not re-add it.
 
         // (c) Pin the platform so a plain resolve targets this PHP. NOTE: this does
         //     NOT protect the installer's own runs — --ignore-platform-reqs, which

@@ -84,6 +84,25 @@ COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 # the network on every run. With this project's GitHub `vcs` repositories (4 laminas
 # forks, +3 more once React is enabled) that alone cost ~12 min in the wizard's
 # module step. Pointing every Composer run at one writable home avoids it.
+# --- Run Apache as the HOST user, so the mounted project stays editable ---
+# This stack bind-mounts YOUR project, and the entrypoint chowns it to www-data so the
+# web installer (running as Apache) can rewrite composer.json, install into vendor/ and
+# write config/. With www-data at its default uid 33 that leaves your own working copy
+# unwritable — `EACCES` in the editor — and a `sudo chown` is undone on the next boot.
+# So we REMAP www-data to your uid/gid instead: every later `chown www-data:www-data`
+# then resolves to your uid, writable by Apache AND by you.
+# Done in the `builder` stage so the later stages inherit it. HOST_UID/HOST_GID come
+# from compose (default 1000); set HOST_UID=33 to keep the classic behaviour. `-o`
+# allows a duplicate id, so this cannot fail on a collision.
+ARG HOST_UID=1000
+ARG HOST_GID=1000
+RUN if [ -n "${HOST_UID}" ] && [ "${HOST_UID}" != "33" ]; then \
+        groupmod -o -g "${HOST_GID}" www-data \
+        && usermod  -o -u "${HOST_UID}" -g "${HOST_GID}" www-data \
+        && chown -R "${HOST_UID}:${HOST_GID}" /var/www \
+        && echo "[melis-docker-react] www-data remapped to ${HOST_UID}:${HOST_GID}" ; \
+    fi
+
 ENV COMPOSER_HOME=/composer
 RUN mkdir -p /composer && chown www-data:www-data /composer
 
@@ -131,24 +150,23 @@ RUN mkdir -p /var/www/${APP_NAME}/config \
 # So resolve the graph here in a throwaway dir: --no-install fetches METADATA only,
 # which is the expensive part (~7 MB; package archives are seconds). The cache is
 # keyed per repository URL, so it serves any project mounted later, not just this
-# resolve. Optional token, to stay off the 60 req/h unauthenticated limit:
-#   GITHUB_TOKEN=ghp_xxx docker build --secret id=github_token,env=GITHUB_TOKEN .
+# resolve. No GitHub credentials needed — the skeleton this resolves (see
+# SKELETON_VERSION) has no `vcs` repositories, so everything comes from Packagist.
 # Never fatal — a failed pre-warm only means a slower first boot.
 ARG WITH_REACT=1
-RUN --mount=type=secret,id=github_token \
-    export COMPOSER_ALLOW_SUPERUSER=1 \
-    && GITHUB_TOKEN="$(cat /run/secrets/github_token 2>/dev/null || true)" \
-    && if [ -n "$GITHUB_TOKEN" ]; then \
-         export COMPOSER_AUTH="{\"github-oauth\":{\"github.com\":\"${GITHUB_TOKEN}\"}}" ; \
-       fi \
+# Skeleton version/branch used ONLY by the cache pre-warm below — this stack never
+# creates a project (it mounts the user's own). Empty = latest stable.
+# TEMPORARY DEFAULT — `dev-test/removed-forks` drops the four laminas `vcs`
+# repositories in favour of the Packagist-published melisplatform/laminas-* forks.
+# Set back to empty once that branch is merged and released.
+ARG SKELETON_VERSION=dev-test/removed-forks
+RUN export COMPOSER_ALLOW_SUPERUSER=1 \
     && ( mkdir -p /tmp/warm && cd /tmp/warm \
-         && composer create-project melisplatform/melis-platform-skeleton . \
+         && composer create-project \
+              "melisplatform/melis-platform-skeleton${SKELETON_VERSION:+:$SKELETON_VERSION}" . \
               --no-interaction --no-progress --no-install --no-scripts \
          && if [ "$WITH_REACT" = "1" ]; then \
-              composer config repositories.melis-core           vcs https://github.com/melisplatform/melis-core \
-              && composer config repositories.melis-react-api      vcs https://github.com/melisplatform/melis-react-api \
-              && composer config repositories.melis-react-override vcs https://github.com/melisplatform/melis-react-override \
-              && composer require --no-update --no-interaction --no-scripts \
+              composer require --no-update --no-interaction --no-scripts \
                    "melisplatform/melis-core:dev-melis-react as 5.3.999" \
                    "melisplatform/melis-react-api:dev-melis-react" \
                    "melisplatform/melis-react-override:dev-melis-react" ; \

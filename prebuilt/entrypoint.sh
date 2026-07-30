@@ -23,7 +23,11 @@ if [ ! -f composer.json ]; then
   # that would make create-project refuse the "non-empty" directory. rmdir -p only
   # removes EMPTY dirs, so real data is never touched.
   rmdir -p vendor/melisplatform/melis-core/ui-react/node_modules 2>/dev/null || true
-  composer create-project melisplatform/melis-platform-skeleton . --no-interaction --no-progress --prefer-dist
+  # SKELETON_VERSION comes from the image (build ARG) or compose env; empty = latest
+  # stable, otherwise a Composer version or branch (e.g. dev-test/removed-forks).
+  composer create-project \
+    "melisplatform/melis-platform-skeleton${SKELETON_VERSION:+:$SKELETON_VERSION}" . \
+    --no-interaction --no-progress --prefer-dist
 fi
 if [ ! -d vendor ]; then
   echo "[melis-docker-react] Installing composer dependencies..."
@@ -36,13 +40,14 @@ fi
 #     failure: the legacy back-office still works. Opt out with WITH_REACT=0.
 if [ "${WITH_REACT:-1}" = "1" ] && [ -f /melis-conf/enable-react.sh ]; then
   bash /melis-conf/enable-react.sh "$APP_DIR" \
-    || echo "[melis-docker-react] WARNING: React enablement failed — continuing with the legacy back-office only. See the errors above (missing GITHUB_TOKEN?); restart the container to retry."
+    || echo "[melis-docker-react] WARNING: React enablement failed — continuing with the legacy back-office only. See the errors above; restart the container to retry."
 fi
 
 # 0c) Keep the Composer cache owned by www-data — the web installer runs Composer as
 #     that user and, without a readable+writable COMPOSER_HOME, disables caching and
 #     re-downloads every repository's metadata (~12 min in the wizard's module step
-#     with this project's 7 vcs repos). Normally a no-op: the image already chowns it.
+#     when the skeleton still declares laminas vcs repos). Normally a no-op: the
+#     image already chowns it.
 chown -R www-data:www-data "${COMPOSER_HOME:-/composer}" 2>/dev/null || true
 
 # 1) Wait for the database (PHP/mysqli — works with MySQL 8.x TLS, unlike the CLI client).

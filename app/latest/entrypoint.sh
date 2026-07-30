@@ -108,8 +108,7 @@ DB_HOST="$DB_HOST" DB_USER="$DB_USER" DB_PASS="$DB_PASS" DB_NAME="$DB_NAME" php 
 #    the wizard tests the directory, and files created later inherit www-data anyway.
 #
 #    NOT ENOUGH ON ITS OWN if you intend to run the web installer: it also rewrites
-#    composer.json/composer.lock, installs modules into vendor/, and the guard writes
-#    auth.json in the project ROOT. Step 5b below covers those.
+#    composer.json/composer.lock and installs modules into vendor/. Step 5b covers those.
 mkdir -p \
     "$APP_DIR/config/autoload/platforms" \
     "$APP_DIR/cache" \
@@ -137,11 +136,9 @@ for d in data dbdeploy dbdeploy/data public "etc/bundles" test thirdparty \
 done
 
 # 5b) Make the project writable by Apache so the WEB INSTALLER can run. It rewrites
-#     composer.json/composer.lock, composer-installs modules into vendor/, and the
-#     guard writes auth.json in the project root — all as www-data. A checkout owned
-#     by your user (uid 1000, mode 755) blocks every one of those, and the wizard
-#     dies with "./composer.json is not writable" and then "could not read Username
-#     for 'https://github.com'" (no auth.json → unauthenticated GitHub → git driver).
+#     composer.json/composer.lock and composer-installs modules into vendor/ — all as
+#     www-data. A checkout owned by your user (uid 1000, mode 755) blocks those, and
+#     the wizard dies with "./composer.json is not writable".
 #
 #     Note this CANNOT be done in the Dockerfile: docker-compose bind-mounts your
 #     project over the app dir at runtime, masking any ownership baked into the image.

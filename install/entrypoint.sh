@@ -70,7 +70,11 @@ if [ ! -f composer.json ]; then
   # rmdir -p only removes EMPTY dirs and stops at the first non-empty one, so real
   # data is never touched.
   rmdir -p vendor/melisplatform/melis-core/ui-react/node_modules 2>/dev/null || true
-  composer create-project melisplatform/melis-platform-skeleton . --no-interaction --no-progress
+  # SKELETON_VERSION (build ARG / compose env): empty = latest stable, otherwise a
+  # Composer version or branch, e.g. dev-test/removed-forks. See the Dockerfile.
+  composer create-project \
+    "melisplatform/melis-platform-skeleton${SKELETON_VERSION:+:$SKELETON_VERSION}" . \
+    --no-interaction --no-progress
 fi
 
 # 1b) The app dir is proven good — record it for step 0 of the next boot. The
@@ -92,8 +96,8 @@ fi
 #     melis-core (which ships the committed React build) + the MelisReactApi and
 #     MelisReactOverride modules, and patches config/application.config.php.
 #     Idempotent (skips once enabled); opt out with WITH_REACT=0 in .env. Not fatal
-#     on failure: the legacy back-office still works — fix the cause (usually a
-#     missing GITHUB_TOKEN) and restart the container to retry.
+#     on failure: the legacy back-office still works — fix the cause and restart the
+#     container to retry. No GitHub credentials are involved (all Packagist).
 if [ "${WITH_REACT:-1}" = "1" ]; then
   bash /melis-conf/enable-react.sh "$APP_DIR" \
     || echo "[melis-docker-react] WARNING: React enablement failed — continuing with the legacy back-office only. See the errors above, then restart the container to retry."
@@ -102,7 +106,7 @@ fi
 # 2c) Hand the Composer cache these root-run steps just filled to www-data. The web
 #     installer runs Composer as www-data; without a readable+writable COMPOSER_HOME
 #     it disables caching and re-downloads every repository's metadata (~12 min in
-#     the wizard's module step with this project's 7 vcs repos).
+#     the wizard's module step when the skeleton still declares laminas vcs repos).
 chown -R www-data:www-data "${COMPOSER_HOME:-/composer}" 2>/dev/null || true
 
 # 3) Wait for the database (PHP/mysqli — works with MySQL 8.x TLS, unlike the CLI client).
