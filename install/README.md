@@ -47,6 +47,34 @@ docker compose down -v      # full reset (drops the database)
 - Your Melis code lives in `./melis` on the host — edit it directly.
 - To reinstall from scratch: `docker compose down -v && rm -rf ./melis` then `docker compose up --build`.
 
+## Developing the React back-office
+
+This stack starts a **Vite dev server** alongside `php` and `db`, so it's the one to
+use for working on the React UI:
+
+- **http://localhost:8080/melis-react** — the back-office as PHP serves it (the
+  committed production build)
+- **http://localhost:5173** — the same UI with hot reload
+
+The source is in `melis/vendor/melisplatform/melis-core/ui-react/` on your host, so
+your IDE edits it directly and Vite picks changes up instantly.
+
+`/melis-react` serves the **built** assets, not the source, so a change only shows up
+there after a build:
+
+```bash
+cd install
+docker compose exec vite npm run build
+# output → melis/vendor/melisplatform/melis-core/public/ui-react/
+```
+
+Don't want the dev server? `docker compose up -d php db`, or `docker compose stop vite`.
+
+> Both the source and the build output live under `vendor/`, so Composer overwrites
+> them whenever it touches `melis-core` — including during the web installer's own
+> `composer update`. To keep a change, commit it to the `melis-react` branch of
+> `melisplatform/melis-core`.
+
 ## Notes
 - The skeleton is the **Community Edition** (public modules); the installer adds
   CMS / Front / Engine / demo as you choose.
