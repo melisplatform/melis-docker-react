@@ -137,7 +137,7 @@ nothing about `/melis` changes:
 | http://localhost:8080/melis | Classic (legacy) back-office |
 | http://localhost:8080/melis-react | **React back-office** (same login) |
 
-How it works: Composer pulls the `melis-react` branches of
+How it works: Composer pulls the stable **6.x** releases of
 [`melis-core`](https://github.com/melisplatform/melis-core) (which ships a **committed
 production build** of the React app, served by MelisAssetManager under
 `/MelisCore/ui-react/` — no Node.js needed at runtime),
@@ -157,28 +157,6 @@ installer completes, then activate on the next request.
 Not interested in React? `WITH_REACT=0` in `.env` (turnkey stack), or build the
 image with `--build-arg WITH_REACT=0` (pre-built/fpm) — you get a plain legacy Melis.
 
-### Temporary dependency pin — `laminas/laminas-serializer:2.17`
-
-The React enablement also requires `laminas/laminas-serializer:2.17`.
-**This is a workaround — remove it once upstream allows.**
-
-Enabling React resolves `melis-core` (which allows `^2.17 || ^3.0`) before the web
-installer has added the CMS modules, so Composer picks `2.18.0` and locks it. The
-installer then adds `melis-front`, which requires *exactly* `2.17`, via a partial
-update that cannot downgrade a locked package — the step fails, and because the
-installer ignores Composer's exit code it activates modules it never installed,
-which is a bootstrap fatal on every URL.
-
-**When can it go?** When `melis-front` stops pinning an exact version:
-
-```bash
-docker compose exec php composer why laminas/laminas-serializer
-# melisplatform/melis-front vX.Y.Z requires laminas/laminas-serializer (2.17)  ← still pinned
-```
-
-If that becomes a range (e.g. `^2.17`), delete the `"laminas/laminas-serializer:2.17"`
-line from `*/conf/enable-react.sh` — four copies: `install/`, `prebuilt/`, `fpm/`,
-`app/latest/`.
 
 ### Developing the React UI (Vite dev server)
 

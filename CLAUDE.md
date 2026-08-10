@@ -60,30 +60,34 @@ authoritative; scripting it is fragile and was a deliberate non-goal.
 
 The React BO is the one developed in the sibling `../ocidev6` project (chantier 3):
 a Vite + React 19 + TS + Tailwind v4 SPA that talks to Melis over a JSON API and
-shows not-yet-migrated legacy tools in an iframe pool. Everything ships on public
-GitHub **`melis-react` branches**:
+shows not-yet-migrated legacy tools in an iframe pool. Everything ships on Packagist
+as **stable 6.x releases** (since 2026-07-30 — no dev branches involved):
 
-- **`melis-core@melis-react`** — the SPA source (`ui-react/`) **and the committed
+- **`melis-core` ^6.0** — the SPA source (`ui-react/`) **and the committed
   production build** (`public/ui-react/`, served by MelisAssetManager at
   `/MelisCore/ui-react/`). Because the build is committed, serving `/melis-react`
-  needs **no Node.js in the PHP images**.
-- **`melis-react-api@melis-react`** — JSON API module, routes under `/melis/react-api/*`.
-- **`melis-react-override@melis-react`** — the `/melis-react/*` SPA route (public via
+  needs **no Node.js in the PHP images**. Pulled in by the skeleton, not by
+  `enable-react.sh`.
+- **`melis-react-api` ^6.0** — JSON API module, routes under `/melis/react-api/*`.
+- **`melis-react-override` ^6.0** — the `/melis-react/*` SPA route (public via
   `excluded_routes`; `SpaController` serves melis-core's `public/ui-react/index.html`)
   + the legacy-tool iframe mechanism (overrides MelisCore's `PluginViewController`).
 
 **How this repo enables it** (`conf/enable-react.sh` + `conf/enable-react.php`,
 identical in `install/`/`prebuilt/`/`fpm/`, both idempotent):
 
-1. `composer require -W "melisplatform/melis-core:dev-melis-react as 5.3.999"
-   melis-react-api:dev-melis-react melis-react-override:dev-melis-react`. The inline
-   alias keeps every `^5.3` constraint satisfied AND stops the installer's own
-   `composer update --root-reqs` from rolling melis-core back to a stable dist.
-   **No `repositories` entries** — all three are on Packagist, melis-core's
-   `dev-melis-react` branch included (verified 2026-07-30), so Composer never
-   enumerates their refs through the GitHub API. Do not add `vcs` entries back.
-   No GitHub authentication of any kind — the `COMPOSER_AUTH`/`GITHUB_TOKEN` plumbing
-   was removed 2026-07-30 (see the token section below).
+1. `composer require melisplatform/melis-react-api:^6.0
+   melisplatform/melis-react-override:^6.0`.
+   **melis-core is NOT required here** — the `^6.0` skeleton already pulls
+   melis-core `^6.0`, and v6.0.x carries the committed React build.
+   **No `repositories` entries, no inline alias, no `-W`** — everything is on
+   Packagist at stable 6.x tags, so a plain require resolves and Composer never
+   enumerates refs through the GitHub API. Do not add `vcs` entries back.
+   No GitHub authentication of any kind — the `COMPOSER_AUTH`/`GITHUB_TOKEN`
+   plumbing was removed 2026-07-30 (see the token section below).
+   (Until 2026-07-30 this pulled melis-core's `dev-melis-react` branch aliased as
+   `5.3.999` with `-W`, because the React build lived only on that branch and the
+   5.x modules capped melis-core below 6.0. The 6.x line removed both needs.)
 2. `enable-react.php` patches `config/application.config.php`: appends the two
    modules **after** `getModules()` (so the override wins the config merge) —
    **never** in `config/melis.module.load.php`, which the Modules tool rewrites and
@@ -112,9 +116,8 @@ during which the published port returns an empty response (observed).
 reintroduce it, and do not add a `vcs` repository to any stack — that is what would
 bring the whole problem back (see gotcha 9). What changed, all upstream of this repo:
 
-- **The three React packages are public and on Packagist** — `melis-react-api` and
-  `melis-react-override` at `v6.0.0` plus their `dev-melis-react` branches, and
-  melis-core's `dev-melis-react` branch was already indexed. So the old
+- **The three React packages are public and on Packagist** at stable 6.x
+  (`melis-core` v6.0.1, `melis-react-api` / `melis-react-override` v6.0.1). So the old
   `fatal: could not read Username for 'https://github.com'` failure is gone, and
   `enable-react.sh` needs no `repositories` entries.
 - **The four laminas forks are on Packagist as `melisplatform/laminas-*`**, each
@@ -123,19 +126,19 @@ bring the whole problem back (see gotcha 9). What changed, all upstream of this 
   upstream is *excluded* rather than installed alongside. Versions: mail `2.26.1`,
   mime `2.13.1`, crypt `3.13.1`, file `2.14.1`.
 - **The skeleton dropped its `repositories` block** and requires the forks by name.
-  Currently on the branch `dev-test/removed-forks` (commit `c7fb2e3`), which this repo
-  targets via `SKELETON_VERSION` — a build ARG + compose env in all four stacks.
-  **`SKELETON_VERSION=` (empty) = latest stable**, which is still v5.3.7 and STILL
-  declares the four `vcs` repos: that path is slow and rate-limit-prone with no token.
-  Revert the default to empty once the branch is merged and released.
-  That skeleton branch also pins `config.platform.php = 8.3.0` — needed, or its lock
-  picks `symfony/console` v8 (php >=8.4.1) and gotcha 10 lands in the lock file.
+  Released as **v6.0.0**, which this repo targets via `SKELETON_VERSION=^6.0` — a build
+  ARG + compose env in all four stacks. **`SKELETON_VERSION=` (empty) = latest stable**,
+  which is now also the 6.x line. Pin to 5.3.x only if you need the old line: that one
+  still declares the four `vcs` repos and is slow / rate-limit-prone without a token.
+  The 6.x skeleton also pins `config.platform.php = 8.3.0` — needed, or its lock picks
+  `symfony/console` v8 (php >=8.4.1) and gotcha 10 lands in the lock file.
 
-Verified end-to-end with **no token and no credentials** (2026-07-30):
-`create-project` from the branch, then `enable-react.sh`'s require — all three React
-packages on `dev-melis-react`, melis-core's committed React build present, and exactly
-one psr-4 path per namespace for all four forks with no `vendor/laminas/laminas-*`
-duplicate.
+Verified end-to-end with **no token and no credentials** (2026-07-30), on stable 6.x:
+`create-project melis-platform-skeleton:^6.0`, then `enable-react.sh`'s require, then
+the wizard's own `composer update --root-reqs` adding cms/front/engine — all green.
+melis-core v6.0.1 with its committed React build AND the `ui-react/` source (so vite
+works too), exactly one psr-4 path per namespace for all four laminas forks with no
+`vendor/laminas/laminas-*` duplicate.
 
 **The crypt trap, for the record** — it failed SILENTLY, which is why it took a real
 install to see. The skeleton first required `melisplatform/laminas-crypt: ^4.0`.
@@ -230,16 +233,18 @@ Packagist. (Historically it took `GITHUB_TOKEN` via a Compose build secret, beca
 unauthenticated it hit the 60 req/h GitHub API limit and gave up in ~2 s — easy to
 mistake for a fast success when timing things.)
 
-**`enable-react.sh` pins `laminas/laminas-serializer:2.17` — TEMPORARY, remove when
-upstream allows.** melis-core allows `^2.17 || ^3.0`; resolving it alone (which is
-what enablement does, pre-installer) picks 2.18.0 and locks it. The wizard then adds
-`melis-front`, which requires *exactly* `2.17`, via `--root-reqs` — a partial update
-that cannot downgrade a locked package → resolution fails → gotcha 8 plays out
-(modules activated but absent). Observed end-to-end on `app/latest` 2026-07-28; the
-guard repaired it with `-W` in ~68 s, but the pin avoids the failure entirely.
-Removal check: `composer why laminas/laminas-serializer` — if melis-front's
-constraint is no longer the exact `2.17`, drop the line from all four
-`*/conf/enable-react.sh`. Documented for users in README.
+**`laminas/laminas-serializer` needs no pin any more (removed 2026-07-30).**
+`enable-react.sh` used to add `laminas/laminas-serializer:2.17`, because melis-core
+allows `^2.17 || ^3.0` and a React-only resolve locked 2.18.0, while melis-front
+required *exactly* `2.17`; the wizard's `--root-reqs` partial update could not
+downgrade it, so resolution failed and gotcha 8 played out (modules activated but
+absent). **melis-front v6.0.1 relaxed that to `^2.17`**, and 2.18.0 is a metadata-only
+release — its `src/` is byte-identical to 2.17.0 (verified by diffing the tags), so
+nothing functional changes. Verified end-to-end on 6.x with no pin: the wizard's
+partial update now exits 0 with serializer 2.18.0 and melis-front v6.0.1 installed.
+If a future module reintroduces an exact pin, the symptom is
+`the package is fixed to X (lock file version) by a partial update` — check with
+`composer why laminas/laminas-serializer`.
 
 React-specific gotchas (each cost a debugging round — respect them):
 - **`composer require` MUST use `--no-scripts` in `enable-react.sh`.** The
@@ -367,8 +372,9 @@ React-specific gotchas (each cost a debugging round — respect them):
    the cause. Reproduced end-to-end; the Composer error text is in the discarded
    response body. Two known triggers: the installer runs `composer update --root-reqs`
    (a **partial** update) which fails outright when a new module needs a version of an
-   already-locked transitive dep (`melis-front` pins `laminas/laminas-serializer` to
-   exactly `2.17`), and any packagist/GitHub hiccup during requirement resolution.
+   already-locked transitive dep (melis-front USED to pin `laminas/laminas-serializer`
+   to exactly `2.17` — relaxed to `^2.17` in v6.0.1), and any packagist hiccup during
+   requirement resolution.
    Mitigated by `conf/melis-installer-guard.php` (below); the real fixes are upstream
    (check the exit code; don't activate a module `getModulePath()` can't find).
 9. **No `vcs` repositories — this is what defused gotcha 8's main trigger.** RESOLVED

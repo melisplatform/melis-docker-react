@@ -15,7 +15,7 @@ services:
         TZ: ${TZ:-Europe/Paris}
         PHP_VERSION: ${PHP_VERSION:-8.3}
         WITH_REACT: ${WITH_REACT:-1}
-        SKELETON_VERSION: ${SKELETON_VERSION-dev-test/removed-forks}
+        SKELETON_VERSION: ${SKELETON_VERSION-^6.0}
     image: ${MELIS_FPM_IMAGE:-melisplatform/melis-docker-react:fpm-php8.3}
     container_name: ${MELIS_CONTAINER_NAME:-melis}-php
     depends_on:
@@ -30,7 +30,7 @@ services:
       TZ: ${TZ:-Europe/Paris}
       HOST_PORT: ${HOST_PORT:-8080}
       # Used only by the entrypoint's defensive create-project (app volume empty).
-      SKELETON_VERSION: ${SKELETON_VERSION-dev-test/removed-forks}
+      SKELETON_VERSION: ${SKELETON_VERSION-^6.0}
       # NOTE: host without :port — keep it clean (a "host:port" value breaks flyway/JDBC)
       MYSQL_HOST: ${MELIS_CONTAINER_NAME:-melis}-db
       MYSQL_HOSTNAME: ${MELIS_CONTAINER_NAME:-melis}-db

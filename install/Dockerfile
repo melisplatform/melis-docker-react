@@ -13,11 +13,10 @@ FROM php:${PHP_VERSION}-apache
 ARG APP_NAME=melis
 ARG TZ=Europe/Paris
 # Skeleton version/branch for `composer create-project`. Empty = latest stable.
-# TEMPORARY DEFAULT — `dev-test/removed-forks` is the skeleton branch that drops the
-# four laminas `vcs` repositories in favour of the Packagist-published
-# melisplatform/laminas-* forks, which is what makes GITHUB_TOKEN unnecessary.
-# Set back to empty once that branch is merged and released.
-ARG SKELETON_VERSION=dev-test/removed-forks
+# Defaults to the 6.x line: v6.0.0 dropped the four laminas `vcs` repositories in
+# favour of the Packagist-published melisplatform/laminas-* forks, which is what
+# makes a GitHub token unnecessary. Empty = latest stable.
+ARG SKELETON_VERSION=^6.0
 # Exported so the entrypoint's own create-project (first run) uses the same version.
 ENV APP_NAME=${APP_NAME} \
     TZ=${TZ} \
@@ -61,16 +60,6 @@ RUN if [ "$WITH_XDEBUG" = "1" ]; then \
 # Composer (needed at runtime: skeleton bootstrap + the web installer adds modules)
 COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 
-# Shared, www-data-writable Composer home — a large install-time speedup.
-# The web installer runs Composer *inside an HTTP request*, i.e. as www-data, whose
-# HOME (/var/www) is root-owned: Composer then silently disables its cache and
-# re-fetches every repository's metadata over the network on every run. With the 7
-# `vcs` repositories this project ends up with (4 laminas forks + 3 React repos),
-# each needing every branch/tag enumerated through the GitHub API, that alone cost
-# ~12 min in the wizard's "downloadModules" step (measured: 706 s of 711 s spent
-# in "Loading composer repositories", 4 s actually installing packages).
-# Here the cache is filled by the entrypoint's create-project (as root), which then
-# hands it to www-data — so the wizard reuses metadata already on disk.
 # --- Run Apache as the HOST user, so ./melis stays editable on the host ---
 # This stack's whole point is host-editable code, but the entrypoint has to chown the
 # app dir to www-data (the web installer runs as Apache and rewrites composer.json,
@@ -92,6 +81,16 @@ RUN if [ -n "${HOST_UID}" ] && [ "${HOST_UID}" != "33" ]; then \
         && echo "[melis-docker-react] www-data remapped to ${HOST_UID}:${HOST_GID}" ; \
     fi
 
+# Shared, www-data-writable Composer home — a large install-time speedup.
+# The web installer runs Composer *inside an HTTP request*, i.e. as www-data, whose
+# HOME (/var/www) is root-owned: Composer then silently disables its cache and
+# re-fetches every repository's metadata over the network on every run. With the 7
+# `vcs` repositories this project ends up with (4 laminas forks + 3 React repos),
+# each needing every branch/tag enumerated through the GitHub API, that alone cost
+# ~12 min in the wizard's "downloadModules" step (measured: 706 s of 711 s spent
+# in "Loading composer repositories", 4 s actually installing packages).
+# Here the cache is filled by the entrypoint's create-project (as root), which then
+# hands it to www-data — so the wizard reuses metadata already on disk.
 ENV COMPOSER_HOME=/composer
 RUN mkdir -p /composer && chown www-data:www-data /composer
 
@@ -131,9 +130,8 @@ RUN export COMPOSER_ALLOW_SUPERUSER=1 \
               --no-interaction --no-progress --no-install --no-scripts \
          && if [ "$WITH_REACT" = "1" ]; then \
               composer require --no-update --no-interaction --no-scripts \
-                   "melisplatform/melis-core:dev-melis-react as 5.3.999" \
-                   "melisplatform/melis-react-api:dev-melis-react" \
-                   "melisplatform/melis-react-override:dev-melis-react" ; \
+                   "melisplatform/melis-react-api:^6.0" \
+                   "melisplatform/melis-react-override:^6.0" ; \
             fi \
          && composer update --dry-run --no-interaction --no-scripts --no-progress ) \
        || echo "[melis-docker-react] WARNING: Composer cache pre-warm incomplete — the first web install will be slower." \

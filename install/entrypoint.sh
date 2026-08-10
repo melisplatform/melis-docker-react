@@ -71,7 +71,7 @@ if [ ! -f composer.json ]; then
   # data is never touched.
   rmdir -p vendor/melisplatform/melis-core/ui-react/node_modules 2>/dev/null || true
   # SKELETON_VERSION (build ARG / compose env): empty = latest stable, otherwise a
-  # Composer version or branch, e.g. dev-test/removed-forks. See the Dockerfile.
+  # Composer version or branch, e.g. ^6.0. See the Dockerfile.
   composer create-project \
     "melisplatform/melis-platform-skeleton${SKELETON_VERSION:+:$SKELETON_VERSION}" . \
     --no-interaction --no-progress

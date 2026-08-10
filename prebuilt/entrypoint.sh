@@ -24,7 +24,7 @@ if [ ! -f composer.json ]; then
   # removes EMPTY dirs, so real data is never touched.
   rmdir -p vendor/melisplatform/melis-core/ui-react/node_modules 2>/dev/null || true
   # SKELETON_VERSION comes from the image (build ARG) or compose env; empty = latest
-  # stable, otherwise a Composer version or branch (e.g. dev-test/removed-forks).
+  # stable, otherwise a Composer version or branch (e.g. ^6.0).
   composer create-project \
     "melisplatform/melis-platform-skeleton${SKELETON_VERSION:+:$SKELETON_VERSION}" . \
     --no-interaction --no-progress --prefer-dist

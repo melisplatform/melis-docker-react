@@ -15,11 +15,10 @@ FROM php:${PHP_VERSION}-fpm
 ARG APP_NAME=melis
 ARG TZ=Europe/Paris
 # Pin the skeleton version for reproducible images (empty = latest stable).
-# TEMPORARY DEFAULT — `dev-test/removed-forks` is the skeleton branch that drops the
-# four laminas `vcs` repositories in favour of the Packagist-published
-# melisplatform/laminas-* forks, which is what makes GITHUB_TOKEN unnecessary.
-# Set back to empty once that branch is merged and released.
-ARG SKELETON_VERSION=dev-test/removed-forks
+# Defaults to the 6.x line: v6.0.0 dropped the four laminas `vcs` repositories in
+# favour of the Packagist-published melisplatform/laminas-* forks, which is what
+# makes a GitHub token unnecessary. Empty = latest stable.
+ARG SKELETON_VERSION=^6.0
 # Exported so the entrypoint's defensive create-project uses the same version.
 ENV APP_NAME=${APP_NAME} \
     TZ=${TZ} \

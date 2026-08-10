@@ -15,7 +15,7 @@ services:
         - MELIS_PLATFORM=${MELIS_PLATFORM}
         - MELIS_MODULE=${MELIS_MODULE}
         - WITH_REACT=${WITH_REACT:-1}
-        - SKELETON_VERSION=${SKELETON_VERSION-dev-test/removed-forks}
+        - SKELETON_VERSION=${SKELETON_VERSION-^6.0}
         # Remap www-data to your host uid/gid so your bind-mounted project stays
         # editable (the entrypoint chowns it to www-data for the web installer).
         # Set HOST_UID=33 in .env to keep the classic www-data ownership.

@@ -78,12 +78,6 @@ RUN apt-get update -y \
 # conf/enable-react.sh needs it to pull the React back-office branches.
 COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 
-# Shared, www-data-writable Composer home. The web installer runs Composer *inside
-# an HTTP request*, i.e. as www-data, whose HOME (/var/www) is root-owned: Composer
-# then silently disables its cache and re-fetches every repository's metadata over
-# the network on every run. With this project's GitHub `vcs` repositories (4 laminas
-# forks, +3 more once React is enabled) that alone cost ~12 min in the wizard's
-# module step. Pointing every Composer run at one writable home avoids it.
 # --- Run Apache as the HOST user, so the mounted project stays editable ---
 # This stack bind-mounts YOUR project, and the entrypoint chowns it to www-data so the
 # web installer (running as Apache) can rewrite composer.json, install into vendor/ and
@@ -103,6 +97,12 @@ RUN if [ -n "${HOST_UID}" ] && [ "${HOST_UID}" != "33" ]; then \
         && echo "[melis-docker-react] www-data remapped to ${HOST_UID}:${HOST_GID}" ; \
     fi
 
+# Shared, www-data-writable Composer home. The web installer runs Composer *inside
+# an HTTP request*, i.e. as www-data, whose HOME (/var/www) is root-owned: Composer
+# then silently disables its cache and re-fetches every repository's metadata over
+# the network on every run. With this project's GitHub `vcs` repositories (4 laminas
+# forks, +3 more once React is enabled) that alone cost ~12 min in the wizard's
+# module step. Pointing every Composer run at one writable home avoids it.
 ENV COMPOSER_HOME=/composer
 RUN mkdir -p /composer && chown www-data:www-data /composer
 
@@ -155,11 +155,10 @@ RUN mkdir -p /var/www/${APP_NAME}/config \
 # Never fatal — a failed pre-warm only means a slower first boot.
 ARG WITH_REACT=1
 # Skeleton version/branch used ONLY by the cache pre-warm below — this stack never
-# creates a project (it mounts the user's own). Empty = latest stable.
-# TEMPORARY DEFAULT — `dev-test/removed-forks` drops the four laminas `vcs`
-# repositories in favour of the Packagist-published melisplatform/laminas-* forks.
-# Set back to empty once that branch is merged and released.
-ARG SKELETON_VERSION=dev-test/removed-forks
+# creates a project (it mounts the user's own). Defaults to the 6.x line, which drops
+# the four laminas `vcs` repositories in favour of the Packagist-published
+# melisplatform/laminas-* forks. Empty = latest stable.
+ARG SKELETON_VERSION=^6.0
 RUN export COMPOSER_ALLOW_SUPERUSER=1 \
     && ( mkdir -p /tmp/warm && cd /tmp/warm \
          && composer create-project \
@@ -167,9 +166,8 @@ RUN export COMPOSER_ALLOW_SUPERUSER=1 \
               --no-interaction --no-progress --no-install --no-scripts \
          && if [ "$WITH_REACT" = "1" ]; then \
               composer require --no-update --no-interaction --no-scripts \
-                   "melisplatform/melis-core:dev-melis-react as 5.3.999" \
-                   "melisplatform/melis-react-api:dev-melis-react" \
-                   "melisplatform/melis-react-override:dev-melis-react" ; \
+                   "melisplatform/melis-react-api:^6.0" \
+                   "melisplatform/melis-react-override:^6.0" ; \
             fi \
          && composer update --dry-run --no-interaction --no-scripts --no-progress ) \
        || echo "[melis-docker-react] WARNING: Composer cache pre-warm incomplete — the first boot will be slower." \

@@ -21,7 +21,7 @@ services:
     #     TZ: ${TZ:-Europe/Paris}
     #     PHP_VERSION: ${PHP_VERSION:-8.3}   # 8.3 (default) | 8.4 (experimental). 8.5 not usable yet.
     #     WITH_REACT: ${WITH_REACT:-1}       # bake the React back-office (/melis-react)
-    #     SKELETON_VERSION: ${SKELETON_VERSION-dev-test/removed-forks}
+    #     SKELETON_VERSION: ${SKELETON_VERSION-^6.0}
     container_name: ${MELIS_CONTAINER_NAME:-melis}-php
     depends_on:
       db:
@@ -48,7 +48,7 @@ services:
       HOST_PORT: ${HOST_PORT:-8080}
       # Used only by the entrypoint's defensive create-project (app dir empty, e.g.
       # a host dir mounted over the baked skeleton). Empty = latest stable.
-      SKELETON_VERSION: ${SKELETON_VERSION-dev-test/removed-forks}
+      SKELETON_VERSION: ${SKELETON_VERSION-^6.0}
       # NOTE: host without :port — keep it clean (a "host:port" value breaks flyway/JDBC)
       MYSQL_HOST: ${MELIS_CONTAINER_NAME:-melis}-db
       MYSQL_HOSTNAME: ${MELIS_CONTAINER_NAME:-melis}-db

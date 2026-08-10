@@ -20,7 +20,7 @@ services:
         PHP_VERSION: ${PHP_VERSION:-8.3}
         WITH_XDEBUG: ${WITH_XDEBUG:-0}
         WITH_REACT: ${WITH_REACT:-1}
-        SKELETON_VERSION: ${SKELETON_VERSION-dev-test/removed-forks}
+        SKELETON_VERSION: ${SKELETON_VERSION-^6.0}
         # Remap www-data to your host uid/gid so ./melis stays editable on the host
         # (the entrypoint chowns the app dir to www-data for the web installer).
         # Set HOST_UID=33 in .env to keep the classic www-data ownership.
@@ -54,7 +54,7 @@ services:
       TZ: ${TZ:-Europe/Paris}
       HOST_PORT: ${HOST_PORT:-8080}
       # Used by the entrypoint's create-project on the first boot.
-      SKELETON_VERSION: ${SKELETON_VERSION-dev-test/removed-forks}
+      SKELETON_VERSION: ${SKELETON_VERSION-^6.0}
       # NOTE: host without :port — keep it clean (a "host:port" value breaks flyway/JDBC)
       MYSQL_HOST: ${MELIS_CONTAINER_NAME:-melis}-db
       MYSQL_HOSTNAME: ${MELIS_CONTAINER_NAME:-melis}-db
