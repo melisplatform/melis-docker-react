@@ -95,6 +95,11 @@ services:
       - "mysqld"
       - "--character-set-server=utf8mb4"
       - "--collation-server=utf8mb4_general_ci"
+      # sql_mode WITHOUT ONLY_FULL_GROUP_BY: legacy Melis tools use loose GROUP BY
+      # (melis-cms-news' getNewsList() selects non-aggregated columns), which MySQL 8
+      # rejects by default — the News tool 500s on a fresh install otherwise. Same
+      # value as the sibling ocidev*/marketplacedev6 stacks.
+      - "--sql-mode=STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION"
     volumes:
       - melis_db_data:/var/lib/mysql
     healthcheck:
