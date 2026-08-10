@@ -48,7 +48,7 @@ First run does `composer create-project` of the Melis skeleton into `./melis`
 cd melis-docker-react/install
 cp .env.example .env
 mkdir -p melis        # pre-create the bind mount (required on Rancher Desktop/WSL)
-docker compose up --build
+docker compose up -d --build
 ```
 
 ### Path C — nginx + PHP-FPM (production-style)
