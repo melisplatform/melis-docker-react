@@ -166,8 +166,7 @@ RUN export COMPOSER_ALLOW_SUPERUSER=1 \
               --no-interaction --no-progress --no-install --no-scripts \
          && if [ "$WITH_REACT" = "1" ]; then \
               composer require --no-update --no-interaction --no-scripts \
-                   "melisplatform/melis-react-api:^6.0" \
-                   "melisplatform/melis-react-override:^6.0" ; \
+                   "melisplatform/melis-core:^6.0.2" ; \
             fi \
          && composer update --dry-run --no-interaction --no-scripts --no-progress ) \
        || echo "[melis-docker-react] WARNING: Composer cache pre-warm incomplete — the first boot will be slower." \

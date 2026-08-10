@@ -10,11 +10,16 @@
 #   - melisplatform/melis-react-override: /melis-react SPA route (public via
 #     excluded_routes) + the iframe mechanism that shows legacy tools in the shell.
 #
+# Since melis-core v6.0.2 the last two are melis-core's OWN requirements, so this
+# script never names them any more (2026-08-10). All it may still have to do is
+# raise melis-core itself: a skeleton whose committed composer.lock predates 6.0.2
+# (v6.0.0's lock pins melis-core v6.0.1) installs a core that does not pull them.
+# Once the skeleton lock carries 6.0.2+, the Composer step below is a no-op.
+#
 # This script (idempotent — exits fast once enabled):
-#   1. requires the two React modules at ^6.0 from Packagist. melis-core is NOT
-#      required here: the ^6.0 skeleton already pulls melis-core ^6.0, and v6.0.x
-#      carries the committed React build. No `repositories` entries — everything is
-#      indexed on Packagist, so Composer never touches the GitHub API;
+#   1. makes sure melis-core is >= 6.0.2, which brings both React modules in as
+#      transitive deps. No `repositories` entries — everything is indexed on
+#      Packagist, so Composer never touches the GitHub API;
 #   2. patches config/application.config.php (see enable-react.php next to this
 #      file) so the two modules load once the platform is installed.
 #
@@ -45,6 +50,10 @@ export COMPOSER_ALLOW_SUPERUSER=1
 # `melis-core ^6.0`, so a plain require resolves. (Until 2026-07-30 this had to pull
 # melis-core's `dev-melis-react` branch aliased as 5.3.999, because the React build
 # lived only on that branch and the 5.x modules capped melis-core below 6.0.)
+# The two React modules are NOT named here: melis-core >= 6.0.2 requires them itself.
+# Naming them would only re-add a root requirement Composer already satisfies, and
+# would drift the moment melis-core changes its own constraint. The version floor is
+# the whole contract — `^6.0.2` is a caret range, so 6.1/6.x still resolve.
 # --no-scripts is REQUIRED: this runs before the platform is installed, and the
 # skeleton's post-update-cmd hook (MelisDbDeploy\DbDeployOnComposerUpdate) fatals
 # trying to reach the not-yet-configured database ("Call to a member function
@@ -62,9 +71,14 @@ export COMPOSER_ALLOW_SUPERUSER=1
 # is fixed to 2.18.0 (lock file version) by a partial update". The installer ignores
 # that failure (gotcha 8), leaving MelisEngine/MelisFront activated but absent: a
 # bootstrap fatal on every URL. Verified fixed end-to-end on 6.x (front v6.0.1 + 2.18.0).
-composer require --no-interaction --no-progress --prefer-dist --no-scripts \
-    "melisplatform/melis-react-api:^6.0" \
-    "melisplatform/melis-react-override:^6.0"
+if [ ! -d vendor/melisplatform/melis-react-override ] \
+    || [ ! -d vendor/melisplatform/melis-react-api ]; then
+    echo "[melis-docker-react] React modules absent — raising melisplatform/melis-core to ^6.0.2..."
+    composer require --no-interaction --no-progress --prefer-dist --no-scripts \
+        "melisplatform/melis-core:^6.0.2"
+else
+    echo "[melis-docker-react] React modules already installed by melis-core — no Composer run needed."
+fi
 
 php "$CONF_DIR/enable-react.php" "$APP_DIR/config/application.config.php"
 php -l "$APP_DIR/config/application.config.php" >/dev/null

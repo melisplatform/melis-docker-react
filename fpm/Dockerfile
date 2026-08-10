@@ -87,9 +87,11 @@ RUN if [ -n "${SKELETON_VERSION}" ]; then \
     && chown -R www-data:www-data /var/www/${APP_NAME}
 
 # --- Enable the React back-office (/melis-react) ---
-# Switches melis-core to its public `melis-react` branch — which ships the COMMITTED
-# production React build in public/ui-react/, so no Node.js is needed in this image —
-# and adds the MelisReactApi + MelisReactOverride modules (see conf/enable-react.sh).
+# melis-core ships the COMMITTED production React build in public/ui-react/, so no
+# Node.js is needed in this image. Since v6.0.2 it also REQUIRES MelisReactApi +
+# MelisReactOverride itself, so enable-react.sh only raises melis-core when the
+# skeleton's lock predates that, then patches application.config.php (see
+# conf/enable-react.sh).
 # Disable with --build-arg WITH_REACT=0. No GitHub credentials needed — all three
 # React packages resolve from Packagist.
 ARG WITH_REACT=1

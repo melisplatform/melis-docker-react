@@ -67,7 +67,8 @@ as **stable 6.x releases** (since 2026-07-30 — no dev branches involved):
   production build** (`public/ui-react/`, served by MelisAssetManager at
   `/MelisCore/ui-react/`). Because the build is committed, serving `/melis-react`
   needs **no Node.js in the PHP images**. Pulled in by the skeleton, not by
-  `enable-react.sh`.
+  `enable-react.sh`. **Since v6.0.2 (2026-08-10) melis-core `require`s the two
+  modules below itself**, so nothing else has to name them.
 - **`melis-react-api` ^6.0** — JSON API module, routes under `/melis/react-api/*`.
 - **`melis-react-override` ^6.0** — the `/melis-react/*` SPA route (public via
   `excluded_routes`; `SpaController` serves melis-core's `public/ui-react/index.html`)
@@ -76,10 +77,20 @@ as **stable 6.x releases** (since 2026-07-30 — no dev branches involved):
 **How this repo enables it** (`conf/enable-react.sh` + `conf/enable-react.php`,
 identical in `install/`/`prebuilt/`/`fpm/`, both idempotent):
 
-1. `composer require melisplatform/melis-react-api:^6.0
-   melisplatform/melis-react-override:^6.0`.
-   **melis-core is NOT required here** — the `^6.0` skeleton already pulls
-   melis-core `^6.0`, and v6.0.x carries the committed React build.
+1. **A version floor on melis-core, nothing else** (changed 2026-08-10): if
+   `vendor/melisplatform/melis-react-{api,override}` are missing it runs
+   `composer require melisplatform/melis-core:^6.0.2` — v6.0.2 requires both React
+   modules, so they arrive as transitive deps. If they are already on disk the step
+   is skipped entirely. **Never name the two modules here again**: melis-core owns
+   that constraint now, and a second copy of it only drifts.
+   Why the floor exists at all: `create-project` installs from the skeleton's
+   **committed `composer.lock`**, and skeleton v6.0.0's lock pinned melis-core
+   **v6.0.1** (pre-React-deps), so a fresh install came up without them.
+   **Skeleton v6.0.1 (2026-08-10) regenerated that lock** — it now pins melis-core
+   v6.0.2 + `melis-react-api`/`melis-react-override` v6.0.1 — so with
+   `SKELETON_VERSION=^6.0` the modules arrive from `create-project` and the Composer
+   run above self-skips; the config patch in step 2 is all that actually runs. The
+   floor stays for `app/latest` (the user's own lock) and for any older pin.
    **No `repositories` entries, no inline alias, no `-W`** — everything is on
    Packagist at stable 6.x tags, so a plain require resolves and Composer never
    enumerates refs through the GitHub API. Do not add `vcs` entries back.
