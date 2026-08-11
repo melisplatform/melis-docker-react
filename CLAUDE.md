@@ -29,10 +29,25 @@ changes by building/running the relevant stack, not by unit tests.
 | [`dev/`](dev/) | Per-PHP-version **base images** only (no compose). `dev-{apache,fpm}-{8.1,8.2,8.3,8.4,8.5}`. | Image building blocks |
 | [`local-proxy/`](local-proxy/) | Shared **nginx-proxy** (opt-in) so several stacks share `:80` by hostname. | Running many projects locally |
 
+**`MELIS_MODULE` is set by the wizard, not only by hand** (added 2026-08-11). The site
+module name typed at the wizard's modules step is applied on the **Finish** step: PHP drops
+a request file, and a root watcher started by each `entrypoint.sh`
+(`conf/melis-module-applier.sh`) rewrites the stack `.env` **and** the live server config
+(Apache `SetEnv` + a `conf-enabled` drop-in, or an fpm pool `env[]`), then reloads in place —
+`apache2ctl graceful` / `SIGUSR2`, never a container restart (gotcha 12 makes restarts
+destructive here). This does not script the install — the wizard stays authoritative; it only
+lets the wizard write a value that used to require hand-editing `.env` + a `down && up`.
+Nothing happens until a request file appears, and an invalid name is rejected twice (PHP, then
+the shell applier) since the endpoint is pre-auth.
+
 All paths finish the same way: the **native Melis web installer** at
 http://localhost:8080 (`/melis/setup`) sets up the DB schema, admin user and the
 optional demo site. **We never script the Melis install** — the web wizard is
 authoritative; scripting it is fragile and was a deliberate non-goal.
+Since melis-installer v6.0.2 the same wizard also exists as a **React version at
+`/melis-react/setup`** (same `SetupReactApi` endpoints); see the gate note in
+[React back-office](#react-back-office-melis-react--this-repos-delta) step 2 —
+it only works if the React modules are loaded pre-install.
 
 ## Architecture conventions
 
@@ -102,10 +117,21 @@ identical in `install/`/`prebuilt/`/`fpm/`, both idempotent):
 2. `enable-react.php` patches `config/application.config.php`: appends the two
    modules **after** `getModules()` (so the override wins the config merge) —
    **never** in `config/melis.module.load.php`, which the Modules tool rewrites and
-   would drop them. The entry is **gated on `MelisCore` being present in
-   `melis.module.load.php`**: pre-install only the installer modules are active and
-   loading the React modules would fatal the wizard; the installer rewrites that
-   file at the end, so the React BO activates on the first post-install request.
+   would drop them. The entry is **gated on `melis.module.load.php` listing
+   `MelisCore` (installed) OR `MelisInstaller` (pre-install)** — widened from
+   MelisCore-only on **2026-08-11**. Both states need the modules: melis-installer
+   **v6.0.2 ships the React install wizard** at `/melis-react/setup`, whose route
+   (`meliscore-melis-react-spa`, `MelisReactOverride`'s `SpaController`) it
+   whitelists in its pre-install redirect guard (`melis-installer/src/Module.php`
+   `$excludedRoutes`) — so with the old gate `/melis-react/*` returned **404 inside
+   the legacy installer layout** until the legacy wizard had finished. The old
+   comment claimed loading the modules pre-install would fatal the wizard; verified
+   on 6.0.2/6.0.3 that it does **not** — `/melis/setup` and `/melis-react/setup`
+   both return 200 with only the installer modules active. The gate stays (rather
+   than becoming unconditional) so a module list that is neither state doesn't load
+   them blindly. `enable-react.php` also **migrates an already-patched config**
+   in place from the old gate to the new one, so existing projects heal on the next
+   boot (still idempotent, still exits 0 when nothing to do).
 
 Where it runs: `install/` → entrypoint step 2b on first boot (`WITH_REACT=1`
 default, in `.env`); `prebuilt/`+`fpm/` → Dockerfile right after the skeleton bake

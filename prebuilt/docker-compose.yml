@@ -40,6 +40,11 @@ services:
       # editors replace the file's inode, which silently strips a single-file bind
       # mount and then blocks the container from restarting at all.
       - ./conf:/melis-conf:ro
+      # The stack folder itself, so the setup wizard's module applier can rewrite the
+      # MELIS_MODULE= line of THIS .env (see conf/melis-module-applier.sh). Mount the
+      # DIRECTORY, never the single .env file: an editor replacing the file's inode
+      # silently detaches a single-file bind mount and then blocks startup.
+      - ./:/melis-stack
     environment:
       APP_NAME: ${APP_NAME:-melis}
       TZ: ${TZ:-Europe/Paris}

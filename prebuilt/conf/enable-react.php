@@ -9,11 +9,16 @@
  * getModules() in application.config.php also lets MelisReactOverride win the
  * config merge (its PluginViewController override) — the pattern validated on dev6.
  *
- * The injected entry is gated on the platform being INSTALLED: pre-install,
- * melis.module.load.php lists only the installer modules (no MelisCore), so the
- * MelisCore services the React modules build on don't exist yet — loading them
- * then would fatal the install wizard. Once the installer rewrites the module
- * list (MelisCore appears), the React modules load on the very next request.
+ * The injected entry is gated on melis.module.load.php listing MelisCore (installed
+ * platform) OR MelisInstaller (pre-install). The React modules are needed in BOTH
+ * states: melis-installer >= 6.0.2 ships the React setup wizard (/melis-react/setup,
+ * whitelisted as route `meliscore-melis-react-spa` in its pre-install redirect
+ * guard), and that route is defined by MelisReactOverride — so gating on MelisCore
+ * alone made /melis-react/* 404 until the legacy wizard had finished. Verified
+ * 2026-08-11: loading both modules pre-install does NOT fatal the wizard
+ * (/melis/setup and /melis-react/setup both 200 with only the installer modules
+ * active). The gate stays non-empty rather than unconditional so a module list
+ * that is neither state (e.g. mid-rewrite/truncated) doesn't load them blindly.
  *
  * CLI only, idempotent. Usage: php enable-react.php /path/to/application.config.php
  */
@@ -29,7 +34,22 @@ if ($src === false) {
     exit(1);
 }
 if (strpos($src, 'MelisReactOverride') !== false) {
-    exit(0); // already patched
+    // Already patched — but a config written before 2026-08-11 carries the old
+    // MelisCore-only gate, which 404s /melis-react/setup (the React install wizard)
+    // on a not-yet-installed platform. Widen it in place; still idempotent.
+    $oldGate = "&& in_array('MelisCore', \$melisLoad, true)";
+    $newGate = "&& (in_array('MelisCore', \$melisLoad, true) || in_array('MelisInstaller', \$melisLoad, true))";
+    if (strpos($src, $oldGate) !== false) {
+        $upgraded = str_replace($oldGate, $newGate, $src);
+        $tmp = $file . '.enable-react.tmp';
+        if (@file_put_contents($tmp, $upgraded) === false || !@rename($tmp, $file)) {
+            @unlink($tmp);
+            fwrite(STDERR, "[enable-react] cannot rewrite {$file}\n");
+            exit(1);
+        }
+        echo "[enable-react] widened the module gate to cover the pre-install React setup wizard\n";
+    }
+    exit(0);
 }
 
 $needle = 'MelisCore\MelisModuleManager::getModules()';
@@ -37,12 +57,12 @@ $inject = $needle . ",\n"
     . "        // React back-office (melis-docker-react). Declared here, NOT in\n"
     . "        // config/melis.module.load.php (the Modules tool rewrites that file and\n"
     . "        // would drop them), and AFTER getModules() so MelisReactOverride wins the\n"
-    . "        // config merge. Gated on MelisCore being active: before the web installer\n"
-    . "        // finishes, melis.module.load.php only lists the installer modules and\n"
-    . "        // MelisCore's services don't exist yet — loading the React modules that\n"
-    . "        // early would fatal the install wizard.\n"
+    . "        // config merge. Gated on the module list naming MelisCore (installed) or\n"
+    . "        // MelisInstaller (pre-install): the React setup wizard at /melis-react/setup\n"
+    . "        // is served by MelisReactOverride's SPA route, so the modules must load\n"
+    . "        // BEFORE the install too (melis-installer >= 6.0.2 whitelists that route).\n"
     . "        (is_array(\$melisLoad = @include __DIR__ . '/melis.module.load.php')\n"
-    . "            && in_array('MelisCore', \$melisLoad, true)\n"
+    . "            && (in_array('MelisCore', \$melisLoad, true) || in_array('MelisInstaller', \$melisLoad, true))\n"
     . "            ? ['MelisReactApi', 'MelisReactOverride']\n"
     . "            : [])";
 

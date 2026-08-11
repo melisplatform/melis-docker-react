@@ -87,4 +87,24 @@ if [ "${WITH_REACT:-1}" = "1" ]; then
 fi
 echo "[melis-docker-react] ============================================================"
 
+# ---------------------------------------------------------------------------
+# Applier MELIS_MODULE : le wizard d'installation peut demander l'adoption du
+# module de site qu'on y a choisi (voir conf/melis-module-applier.sh). PHP tourne
+# en www-data et ne peut écrire ni la conf du serveur (root) ni le .env de la
+# stack (propriété de l'hôte) : il dépose une requête, ce watcher root l'applique
+# et recharge le serveur à chaud — sans redémarrer le conteneur, qui reviendrait
+# avec un bind mount vide sur Rancher/WSL (cf. gotcha 12).
+#
+# Démarré en tâche de fond AVANT le `exec` : il ne remplace pas PID 1, ne touche
+# à rien tant qu'aucune requête n'est déposée, et son absence ne casse rien (le
+# wizard signale simplement que la valeur n'a pas pu être appliquée).
+# ---------------------------------------------------------------------------
+if [ -f /melis-conf/melis-module-applier.sh ]; then
+  APP_DIR="$APP_DIR" \
+  MELIS_STACK_DIR="${MELIS_STACK_DIR:-/melis-stack}" \
+  MELIS_RELOAD_MODE="apache" \
+  MELIS_VHOST_FILE="/etc/apache2/sites-available/000-default.conf" \
+    bash /melis-conf/melis-module-applier.sh &
+fi
+
 exec apache2-foreground
