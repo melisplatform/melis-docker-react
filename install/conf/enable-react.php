@@ -37,17 +37,33 @@ if (strpos($src, 'MelisReactOverride') !== false) {
     // Already patched — but a config written before 2026-08-11 carries the old
     // MelisCore-only gate, which 404s /melis-react/setup (the React install wizard)
     // on a not-yet-installed platform. Widen it in place; still idempotent.
+    $upgraded = $src;
+    $notes    = [];
+
     $oldGate = "&& in_array('MelisCore', \$melisLoad, true)";
     $newGate = "&& (in_array('MelisCore', \$melisLoad, true) || in_array('MelisInstaller', \$melisLoad, true))";
-    if (strpos($src, $oldGate) !== false) {
-        $upgraded = str_replace($oldGate, $newGate, $src);
+    if (strpos($upgraded, $oldGate) !== false) {
+        $upgraded = str_replace($oldGate, $newGate, $upgraded);
+        $notes[]  = 'widened the module gate to cover the pre-install React setup wizard';
+    }
+
+    // A config written before the WITH_REACT opt-out existed has no way to disable the
+    // React back-office short of editing this file. Add the condition in place.
+    $optOut = "&& getenv('WITH_REACT') !== '0'";
+    $anchor = "            ? ['MelisReactApi', 'MelisReactOverride']";
+    if (strpos($upgraded, $optOut) === false && strpos($upgraded, $anchor) !== false) {
+        $upgraded = str_replace($anchor, "            " . $optOut . "\n" . $anchor, $upgraded);
+        $notes[]  = 'added the WITH_REACT=0 opt-out to the module gate';
+    }
+
+    if ($upgraded !== $src) {
         $tmp = $file . '.enable-react.tmp';
         if (@file_put_contents($tmp, $upgraded) === false || !@rename($tmp, $file)) {
             @unlink($tmp);
             fwrite(STDERR, "[enable-react] cannot rewrite {$file}\n");
             exit(1);
         }
-        echo "[enable-react] widened the module gate to cover the pre-install React setup wizard\n";
+        echo "[enable-react] " . implode('; ', $notes) . "\n";
     }
     exit(0);
 }
@@ -61,8 +77,10 @@ $inject = $needle . ",\n"
     . "        // MelisInstaller (pre-install): the React setup wizard at /melis-react/setup\n"
     . "        // is served by MelisReactOverride's SPA route, so the modules must load\n"
     . "        // BEFORE the install too (melis-installer >= 6.0.2 whitelists that route).\n"
+    . "        // WITH_REACT=0 opts out without editing this file.\n"
     . "        (is_array(\$melisLoad = @include __DIR__ . '/melis.module.load.php')\n"
     . "            && (in_array('MelisCore', \$melisLoad, true) || in_array('MelisInstaller', \$melisLoad, true))\n"
+    . "            && getenv('WITH_REACT') !== '0'\n"
     . "            ? ['MelisReactApi', 'MelisReactOverride']\n"
     . "            : [])";
 
