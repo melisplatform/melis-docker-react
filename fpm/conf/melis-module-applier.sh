@@ -1,28 +1,30 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  melis-module-applier — adopte le MELIS_MODULE choisi dans le wizard
+#  melis-module-applier — applies the MELIS_MODULE chosen in the install wizard
 # -----------------------------------------------------------------------------
-#  Le nom du module de site est une décision de SETUP, mais MELIS_MODULE est une
-#  variable de DÉPLOIEMENT (vhost + .env), que PHP ne peut pas écrire : Apache
-#  tourne en root, le .env de la stack appartient à l'hôte (l'entrypoint le
-#  laisse volontairement hors du chown, cf. .env.example), et l'environnement
-#  d'un processus déjà lancé n'est de toute façon pas modifiable de l'extérieur.
+#  The site module name is picked during SETUP, but MELIS_MODULE is a DEPLOYMENT
+#  variable (vhost + .env). PHP cannot write either one: Apache config belongs to
+#  root, the stack .env belongs to the host user (the entrypoint deliberately
+#  leaves it out of its chown, see .env.example), and you cannot change the
+#  environment of a process that is already running anyway.
 #
-#  Ce script tourne donc en root, lancé en tâche de fond par l'entrypoint AVANT
-#  `exec apache2-foreground`. Il surveille un fichier de requête déposé par PHP
-#  (www-data) et, quand il en voit un :
-#     1. revalide le nom (l'endpoint est public, la valeur est NON fiable) ;
-#     2. réécrit la ligne MELIS_MODULE= du .env de la stack → survit à un
-#        `make down && make up` ;
-#     3. réécrit le `SetEnv MELIS_MODULE` du vhost → la valeur est vraie pour la
-#        requête suivante, sans redémarrer le conteneur (sur Rancher/WSL un
-#        restart remonte un bind mount vide, cf. CLAUDE.md) ;
-#     4. `apache2ctl graceful` — les requêtes en cours vont au bout ;
-#     5. acquitte dans un fichier marqueur que le wizard interroge.
+#  So this script runs as root. The entrypoint starts it in the background just
+#  before `exec apache2-foreground`. It watches for a request file dropped by PHP
+#  (www-data), and when one shows up it:
+#     1. re-checks the name — the endpoint is public, so the value is untrusted;
+#     2. rewrites the MELIS_MODULE= line of the stack .env, so the value survives
+#        a `make down && make up`;
+#     3. rewrites `SetEnv MELIS_MODULE` in the vhost, so the value is live from
+#        the next request on, with no container restart (on Rancher/WSL a restart
+#        comes back with an empty bind mount, see CLAUDE.md);
+#     4. runs `apache2ctl graceful`, letting in-flight requests finish;
+#     5. writes an acknowledgement file that the wizard polls.
 #
-#  Aucune de ces étapes n'est destructive : seule la ligne MELIS_MODULE est
-#  touchée dans chaque fichier, et rien n'est écrit tant que le nom n'est pas
-#  valide. Sans requête, le script ne fait strictement rien.
+#  Nothing here is destructive: only the MELIS_MODULE line is touched in each
+#  file, and nothing is written until the name passes validation. With no request
+#  file, the script does nothing at all.
+#
+#  It stops on its own once the platform is installed (see the loop at the end).
 # =============================================================================
 set -u
 
@@ -32,23 +34,26 @@ VHOST_FILE="${MELIS_VHOST_FILE:-/etc/apache2/sites-available/vhost.conf}"
 REQUEST_FILE="$APP_DIR/data/.melis-module-request"
 APPLIED_FILE="$APP_DIR/data/.melis-module-applied"
 LOCK_FILE="/run/melis-module-applier.lock"
+# "Install finished" marker, written by finalizeSetup (InstallerController).
+# The watcher stops as soon as it appears — see the loop at the end of the file.
+INSTALL_MARKER="$APP_DIR/config/melis.install"
 POLL_SECONDS="${MELIS_MODULE_POLL_SECONDS:-2}"
-# apache (mod_php : SetEnv + graceful) ou fpm (env[] dans un pool + SIGUSR2 sur le maître).
+# apache (mod_php: SetEnv + graceful) or fpm (env[] in a pool + SIGUSR2 to the master).
 RELOAD_MODE="${MELIS_RELOAD_MODE:-apache}"
 FPM_POOL_FILE="${MELIS_FPM_POOL_FILE:-/usr/local/etc/php-fpm.d/zz-melis-module.conf}"
 
 log() { echo "[melis-module-applier] $*"; }
 
-# Acquittement lu par le wizard : "<applied|failed> <module>".
+# Acknowledgement the wizard reads: "<applied|failed> <module>".
 ack() {
     printf '%s %s\n' "$1" "${2:-}" > "$APPLIED_FILE.tmp" && mv "$APPLIED_FILE.tmp" "$APPLIED_FILE"
     chown www-data:www-data "$APPLIED_FILE" 2>/dev/null || true
     chmod 664 "$APPLIED_FILE" 2>/dev/null || true
 }
 
-# Réécrit "KEY=value" dans un fichier en ne touchant QUE cette ligne. Le contenu
-# est réinjecté par troncature (`>`), pas par `sed -i`/rename : le .env doit
-# garder son inode et son propriétaire côté hôte.
+# Rewrites "KEY=value" in a file, touching ONLY that line. The content is written
+# back by truncating the file (`>`), not with `sed -i` or a rename: the .env has to
+# keep its inode and its owner on the host side.
 set_key() {
     local file="$1" key="$2" value="$3" tmp
     [ -f "$file" ] || return 1
@@ -65,9 +70,10 @@ set_key() {
     rm -f "$tmp"
 }
 
-# Valeur réellement servie : celle du vhost si elle y est littérale (une application
-# précédente l'y a écrite), sinon celle de l'environnement du conteneur. Se fier au seul
-# $MELIS_MODULE ferait sauter à tort l'application d'un retour à la valeur de démarrage.
+# The value actually being served: the one in the vhost if it is written there as a
+# literal (a previous run put it there), otherwise the one from the container
+# environment. Trusting $MELIS_MODULE alone would wrongly skip the work when going
+# back to the value the container started with.
 current_module() {
     local from_vhost=''
     if [ "$RELOAD_MODE" = "fpm" ] && [ -f "$FPM_POOL_FILE" ]; then
@@ -84,24 +90,24 @@ current_module() {
 apply() {
     local module="$1"
 
-    # Le nom vient d'une page pré-authentification et atterrit dans une conf
-    # Apache : liste blanche stricte, et jamais d'interpolation non quotée.
+    # The name comes from a page served before login and ends up inside an Apache
+    # config file: allow a strict character set only, and never expand it unquoted.
     case "$module" in
         *[!A-Za-z0-9_-]* | '')
-            log "refus du nom de module invalide"
+            log "rejected: invalid module name"
             ack failed ""
             return
             ;;
     esac
     if [ "${#module}" -gt 64 ]; then
-        log "refus : nom de module trop long"
+        log "rejected: module name too long"
         ack failed ""
         return
     fi
 
-    # Déjà la valeur courante → on acquitte sans recharger Apache.
+    # Already the current value: acknowledge without reloading Apache.
     if [ "$(current_module)" = "$module" ]; then
-        log "MELIS_MODULE vaut déjà '$module' — rien à faire"
+        log "MELIS_MODULE is already '$module' — nothing to do"
         ack applied "$module"
         return
     fi
@@ -110,28 +116,28 @@ apply() {
 
     if [ -n "$STACK_DIR" ] && [ -f "$STACK_DIR/.env" ]; then
         if set_key "$STACK_DIR/.env" MELIS_MODULE "$module"; then
-            log "MELIS_MODULE=$module écrit dans $STACK_DIR/.env"
+            log "wrote MELIS_MODULE=$module to $STACK_DIR/.env"
         else
-            log "ATTENTION : impossible d'écrire $STACK_DIR/.env"
+            log "WARNING: could not write $STACK_DIR/.env"
             ok=0
         fi
     else
-        log "ATTENTION : pas de .env accessible (STACK_DIR='$STACK_DIR') — la valeur ne survivra pas à un down/up"
+        log "WARNING: no .env reachable (STACK_DIR='$STACK_DIR') — the value will not survive a down/up"
     fi
 
     if [ "$RELOAD_MODE" = "fpm" ]; then
-        # PHP-FPM hérite de l'environnement du conteneur (clear_env = no) : on le surcharge
-        # par un pool complémentaire, puis SIGUSR2 au maître (PID 1) pour un reload à chaud.
+        # PHP-FPM inherits the container environment (clear_env = no). Override it with
+        # an extra pool file, then SIGUSR2 the master (PID 1) to reload without downtime.
         printf '[www]\nenv[MELIS_MODULE] = "%s"\n' "$module" > "$FPM_POOL_FILE" || ok=0
         if kill -USR2 1 2>/dev/null; then
-            log "php-fpm rechargé (SIGUSR2) avec MELIS_MODULE=$module"
+            log "php-fpm reloaded (SIGUSR2) with MELIS_MODULE=$module"
         else
-            log "ERREUR : impossible de signaler php-fpm"
+            log "ERROR: could not signal php-fpm"
             ok=0
         fi
     else
-        # Le vhost lit ${MELIS_MODULE} depuis l'environnement du processus Apache, figé
-        # au démarrage : on remplace l'expansion par la valeur littérale.
+        # The vhost reads ${MELIS_MODULE} from the Apache process environment, which was
+        # frozen at startup. Replace that expansion with the literal value.
         if [ -f "$VHOST_FILE" ]; then
             local tmp
             tmp="$(mktemp)"
@@ -146,16 +152,16 @@ apply() {
             rm -f "$tmp"
         fi
 
-        # Filet pour les stacks dont le vhost ne pose pas SetEnv (install/prebuilt) :
-        # conf-enabled est inclus au niveau serveur ; quand le vhost définit lui-même la
-        # variable c'est lui qui gagne — les deux écritures sont donc complémentaires.
+        # Safety net for stacks whose vhost has no SetEnv line (install/prebuilt):
+        # conf-enabled is included at server level, and when the vhost sets the variable
+        # itself the vhost wins. So the two writes complement each other.
         printf 'SetEnv MELIS_MODULE "%s"\n' "$module" > /etc/apache2/conf-enabled/zz-melis-module.conf 2>/dev/null || true
 
         if apache2ctl configtest >/dev/null 2>&1; then
             apache2ctl graceful >/dev/null 2>&1 || ok=0
-            log "Apache rechargé (graceful) avec MELIS_MODULE=$module"
+            log "Apache reloaded (graceful) with MELIS_MODULE=$module"
         else
-            log "ERREUR : configtest Apache en échec, aucun rechargement"
+            log "ERROR: Apache configtest failed, no reload"
             ok=0
         fi
     fi
@@ -167,17 +173,43 @@ apply() {
     fi
 }
 
-log "surveillance de $REQUEST_FILE"
+# Is the platform installed? Read it the same way melis-installer does in Module.php
+# (`(bool) trim(file_get_contents(...))`): the file must exist AND hold something PHP
+# considers true, so neither empty nor "0". finalizeSetup writes 1.
+platform_installed() {
+    [ -f "$INSTALL_MARKER" ] || return 1
+    case "$(tr -d '[:space:]' < "$INSTALL_MARKER" 2>/dev/null)" in
+        '' | 0) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+# An installed platform has no wizard left: the route that drops request files lives
+# in MelisInstaller, which finalizeSetup unplugs. Nothing to watch for.
+if platform_installed; then
+    log "platform already installed ($INSTALL_MARKER) — nothing to watch"
+    exit 0
+fi
+
+log "watching $REQUEST_FILE"
 while true; do
     if [ -f "$REQUEST_FILE" ]; then
         module="$(head -n 1 "$REQUEST_FILE" | tr -d '[:space:]')"
         rm -f "$REQUEST_FILE"
-        # flock : Apache sert le healthcheck et le navigateur en parallèle, une
-        # seule application à la fois.
+        # flock: Apache serves the healthcheck and the browser at the same time, so
+        # allow only one apply at a time.
         (
             flock -w 30 9 || exit 1
             apply "$module"
         ) 9>"$LOCK_FILE"
+    fi
+    # Install finished: stop, instead of leaving a root process running for the life of
+    # the container watching a file that www-data can write. This check comes AFTER the
+    # block above on purpose — the wizard's last step asks for the module JUST BEFORE
+    # calling finalizeSetup, so a pending request still has to be served.
+    if platform_installed; then
+        log "platform installed — stopping the watcher"
+        exit 0
     fi
     sleep "$POLL_SECONDS"
 done

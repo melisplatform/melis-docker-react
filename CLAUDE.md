@@ -38,7 +38,14 @@ a request file, and a root watcher started by each `entrypoint.sh`
 destructive here). This does not script the install — the wizard stays authoritative; it only
 lets the wizard write a value that used to require hand-editing `.env` + a `down && up`.
 Nothing happens until a request file appears, and an invalid name is rejected twice (PHP, then
-the shell applier) since the endpoint is pre-auth.
+the shell applier) since the endpoint is pre-auth. **The watcher stops once the platform is
+installed** (added 2026-08-12): it exits as soon as `config/melis.install` reads truthy — same
+test as melis-installer's `Module.php`, so an empty or `0` marker doesn't count — and never
+starts at all on an already-installed platform. Without that it stayed alive for the
+container's lifetime, i.e. a root process watching a www-data-writable path long after
+`finalizeSetup` removed the only route that writes it. The check sits at the END of the loop
+body: the Finish step requests the module adoption JUST BEFORE calling `finalizeSetup`, so a
+pending request must still be served on the iteration that sees the marker.
 
 All paths finish the same way: the **native Melis web installer** at
 http://localhost:8080 (`/melis/setup`) sets up the DB schema, admin user and the
