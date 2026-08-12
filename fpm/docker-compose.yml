@@ -45,6 +45,9 @@ services:
       # React back-office (/melis-react): baked into the image; this only gates the
       # entrypoint's defensive re-enable (e.g. an app volume from the old image).
       WITH_REACT: ${WITH_REACT:-1}
+      # Pre-install redirect target (melis-installer). Empty = the module's default,
+      # /melis-react/setup; set MELIS_SETUP_ROUTE=/melis/setup for the legacy wizard.
+      MELIS_SETUP_ROUTE: ${MELIS_SETUP_ROUTE:-}
       MELIS_PLATFORM: ${MELIS_PLATFORM:-local}
       MELIS_MODULE: ${MELIS_MODULE:-MySite}
     networks:

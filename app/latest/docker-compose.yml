@@ -48,6 +48,9 @@ services:
       # ../../../), so the first boot rewrites its composer.json / composer.lock /
       # config/application.config.php ON THE HOST. Commit first, or set WITH_REACT=0.
       WITH_REACT: ${WITH_REACT:-1}
+      # Pre-install redirect target (melis-installer). Empty = the module's default,
+      # /melis-react/setup; set MELIS_SETUP_ROUTE=/melis/setup for the legacy wizard.
+      MELIS_SETUP_ROUTE: ${MELIS_SETUP_ROUTE:-}
       # Set 0 to disable entrypoint.sh's bind-mount sanity check (step 0).
       MELIS_MOUNT_CHECK: ${MELIS_MOUNT_CHECK:-1}
     networks:

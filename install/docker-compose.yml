@@ -68,6 +68,9 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-melis}
       # React back-office (/melis-react): enabled by default, set 0 for legacy-only.
       WITH_REACT: ${WITH_REACT:-1}
+      # Pre-install redirect target (melis-installer). Empty = the module's default,
+      # /melis-react/setup; set MELIS_SETUP_ROUTE=/melis/setup for the legacy wizard.
+      MELIS_SETUP_ROUTE: ${MELIS_SETUP_ROUTE:-}
       MELIS_PLATFORM: ${MELIS_PLATFORM:-local}
       MELIS_MODULE: ${MELIS_MODULE:-MySite}
       # Set 0 to disable entrypoint.sh's bind-mount sanity check (step 0).
