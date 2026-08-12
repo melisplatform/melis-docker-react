@@ -55,7 +55,7 @@ docker compose up -d --build
 ```bash
 cd melis-docker-react/fpm
 cp .env.example .env
-docker compose up --build
+docker compose up -d --build
 ```
 
 ### Path D — Mount an existing Melis project

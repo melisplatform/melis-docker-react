@@ -50,6 +50,17 @@ services:
       MELIS_SETUP_ROUTE: ${MELIS_SETUP_ROUTE:-}
       MELIS_PLATFORM: ${MELIS_PLATFORM:-local}
       MELIS_MODULE: ${MELIS_MODULE:-MySite}
+      # Setup wizard, "Apache" step (both wizards: melis-installer's
+      # InstallerController::apacheSetupChecker() and SetupWizardService::checkApache()).
+      # It looks for mod_headers/mod_alias/mod_deflate via apache_get_modules() and,
+      # when that function does not exist — i.e. NOT mod_php, which is exactly this
+      # stack — falls back to `getenv('mod_xxx') == "On"`. That fallback is the
+      # installer's own escape hatch for non-Apache servers, and nginx provides all
+      # three natively (add_header, alias/root, gzip), so declare them On here.
+      # Without this the step fails on nginx+FPM and the wizard cannot be completed.
+      mod_headers: "On"
+      mod_alias: "On"
+      mod_deflate: "On"
     networks:
       - melis
     restart: unless-stopped

@@ -43,6 +43,13 @@ When the wizard asks for the database, use the values from your `.env`:
   `utf8mb4_general_ci` (required by the Melis installer).
 - PHP-FPM runs with `clear_env = no` so PHP sees the container's `MYSQL_*` / `MELIS_*`
   environment variables (`getenv`).
+- The setup wizard's **Apache** step (legacy `/melis/setup` and React `/melis-react/setup`)
+  checks `mod_headers` / `mod_alias` / `mod_deflate`. Outside mod_php the installer has no
+  `apache_get_modules()`, so it falls back to reading env vars of those names — its own
+  escape hatch for non-Apache servers. This stack sets the three to `On` in
+  `docker-compose.yml` because nginx does all three natively (`add_header`, `alias`/`root`,
+  `gzip`, the last one enabled in `conf/default.conf`). Without them the step fails and the
+  wizard can't be completed.
 
 ## Everyday use
 

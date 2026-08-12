@@ -489,6 +489,16 @@ React-specific gotchas (each cost a debugging round — respect them):
    - `make doctor STACK=install|app/latest` checks it on demand.
    Recovery is always `docker compose down && docker compose up -d` — a restart cannot
    re-stage the mount, only a create can.
+13. **The wizard's "Apache" step blocks on nginx+FPM unless you declare the modules.**
+   Both wizards (`InstallerController::apacheSetupChecker()`, and the React one via
+   `SetupWizardService::checkApache()`) require `mod_headers`/`mod_alias`/`mod_deflate`:
+   with `apache_get_modules()` they read Apache's real module list, and **without it**
+   — every non-mod_php SAPI, i.e. `fpm/` — they fall back to `getenv('mod_xxx') == "On"`.
+   That fallback is the installer's own escape hatch for non-Apache servers, so `fpm/`
+   sets the three to `On` in `docker-compose.yml` (`clear_env = no` carries them into the
+   workers) and turns `gzip on` in `conf/default.conf`; nginx covers all three natively.
+   The apache stacks need nothing: `alias` and `deflate` are enabled by default in the
+   Debian php:*-apache images and `headers` is `a2enmod`'d in their Dockerfiles.
 
 ## The installer guard (`*/conf/melis-installer-guard.php`)
 
