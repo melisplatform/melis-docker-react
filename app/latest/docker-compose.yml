@@ -79,6 +79,20 @@ services:
   vite:
     image: node:${NODE_VERSION:-22}-alpine
     container_name: ${MELIS_CONTAINER_NAME}-vite
+    # Run as the SAME uid Composer runs as. The php container remaps www-data to
+    # HOST_UID, and the web installer's `composer update` must DELETE the whole
+    # vendor/melisplatform/melis-core tree to upgrade it. As root, this container's
+    # Vite dep-optimizer cache (node_modules/.vite/deps, written after any chown)
+    # is root-owned and www-data cannot remove it: Composer then aborts with
+    # "Could not delete .../node_modules/.vite/deps/*.js" and the installer 500s on
+    # execDbDeploy. Sharing the uid makes everything Vite writes deletable.
+    # NB: node:alpine resolves uid 1000 to its `node` user (HOME=/home/node, npm
+    # cache writable). A HOST_UID with no passwd entry here — e.g. the classic
+    # www-data 33 — leaves HOME=/ and breaks npm; keep it 1000 for this stack.
+    # This does NOT close the write-during-delete race (Vite creating a file inside
+    # a tree Composer is rm -rf'ing can still fail with ENOTEMPTY); for that, run
+    # `docker compose stop vite` while installing.
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     working_dir: /var/www/${APP_NAME}/vendor/melisplatform/melis-core/ui-react
     # Supervisor loop — NEVER exits, NEVER relies on a container restart.
     #
@@ -115,7 +129,6 @@ services:
                if [ ! -f node_modules/.package-lock.json ] || [ ! -f node_modules/vite/package.json ] ||
                   [ package-lock.json -nt node_modules/.package-lock.json ]; then
                  npm ci --no-audit --no-fund || { echo '[vite] npm ci failed — retrying in 15s'; sleep 15; continue; };
-                 chown -R ${HOST_UID:-1000}:${HOST_GID:-1000} node_modules;
                fi;
                npm run dev -- --host 0.0.0.0 & V=$$!;
                while kill -0 $$V 2>/dev/null; do

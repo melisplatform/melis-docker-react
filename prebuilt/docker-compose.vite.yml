@@ -14,6 +14,20 @@ services:
   vite:
     image: node:22-alpine
     container_name: ${MELIS_CONTAINER_NAME:-melis}-vite
+    # Run as the SAME uid Composer runs as. Composer must DELETE the whole
+    # vendor/melisplatform/melis-core tree to upgrade it (first boot, the web
+    # installer's own `composer update`, any later require). As root, this
+    # container's Vite dep-optimizer cache (node_modules/.vite/deps, written after
+    # any chown) is root-owned and Composer's user cannot remove it: the update
+    # aborts with "Could not delete .../node_modules/.vite/deps/*.js". Sharing the
+    # uid makes everything Vite writes deletable.
+    # This does NOT close the write-during-delete race (Vite creating a file inside
+    # a tree Composer is rm -rf'ing can still fail with ENOTEMPTY); for that, stop
+    # this service while installing.
+    # 33 = www-data in the published image (the app volume is 33:33). node:alpine
+    # has NO passwd entry for 33, so HOME falls back to / — unwritable, and npm
+    # would fail on its cache. Hence the HOME / npm_config_cache overrides below.
+    user: "33:33"
     working_dir: /var/www/${APP_NAME:-melis}/vendor/melisplatform/melis-core/ui-react
     # Supervisor loop — NEVER exits, NEVER relies on a container restart.
     #
@@ -42,7 +56,6 @@ services:
                if [ ! -f node_modules/.package-lock.json ] || [ ! -f node_modules/vite/package.json ] ||
                   [ package-lock.json -nt node_modules/.package-lock.json ]; then
                  npm ci --no-audit --no-fund || { echo '[vite] npm ci failed — retrying in 15s'; sleep 15; continue; };
-                 chown -R 33:33 node_modules;
                fi;
                npm run dev -- --host 0.0.0.0 & V=$$!;
                while kill -0 $$V 2>/dev/null; do
@@ -71,6 +84,10 @@ services:
       # Present a port-less Host header to Melis — its domain routing redirect-loops
       # when the Host carries a port (vite.config.ts honours MELIS_PROXY_HOST).
       MELIS_PROXY_HOST: localhost
+      # uid 33 has no passwd entry in node:alpine (HOME=/, unwritable) — give npm
+      # a home and a cache it can actually write. See the `user:` note above.
+      HOME: /tmp
+      npm_config_cache: /tmp/.npm
     # Wait for php to be HEALTHY, not merely started: the entrypoint's defensive
     # re-enable can replace vendor/melisplatform/melis-core before Apache comes up,
     # so starting earlier just burns an `npm ci` on a tree about to be deleted. An
