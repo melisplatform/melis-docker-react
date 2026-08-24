@@ -171,6 +171,14 @@ echo "[melis-docker-react] Making the mounted project writable by www-data (need
 find "$APP_DIR" \( -name 'melis-docker' -o -name 'melis-docker-react' \) -prune \
     -o -exec chown www-data:www-data {} + 2>/dev/null || true
 
+# --- Mail (PHP mail() -> /usr/sbin/sendmail -> SMTP) -----------------------
+# The base image has no MTA at all, so anything calling mail() — notably the
+# 2FA-by-email login — fails with "Unable to send mail: Unknown error". Write
+# msmtp's config from the SMTP_* vars (defaults: the stack's mailpit catcher).
+if [ -f /melis-conf/mail-setup.sh ]; then
+  bash /melis-conf/mail-setup.sh || true
+fi
+
 echo "[melis-docker-react] ============================================================"
 echo "[melis-docker-react]  Melis (app/latest) is ready. Open http://localhost:${HOST_PORT:-8080}"
 echo "[melis-docker-react]  DB to enter in the wizard:  host=${DB_HOST}  db=${DB_NAME}"

@@ -68,6 +68,40 @@ services:
       MELIS_SETUP_ROUTE: ${MELIS_SETUP_ROUTE:-}
       MELIS_PLATFORM: ${MELIS_PLATFORM:-local}
       MELIS_MODULE: ${MELIS_MODULE:-MySite}
+      # Outgoing mail. The php base image ships no MTA, so mail() (the 2FA login
+      # code, password resets, …) died with "Unable to send mail: Unknown error".
+      # The image now has msmtp-mta providing /usr/sbin/sendmail, and the entrypoint
+      # writes /etc/msmtprc from these (conf/mail-setup.sh). Defaults capture every
+      # message in the `mail` service (mailpit) — read them at
+      # http://localhost:${MAILPIT_PORT:-8025}, nothing leaves your machine.
+      # Point these at a real relay to actually send.
+      SMTP_HOST: ${SMTP_HOST:-${MELIS_CONTAINER_NAME:-melis}-mail}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_TLS: ${SMTP_TLS:-off}
+      SMTP_FROM: ${SMTP_FROM:-melis@localhost}
+      # Force From: to SMTP_FROM. Defaults to on whenever SMTP_USER is set — an
+      # authenticating relay (Gmail) rejects or rewrites any other sender.
+      SMTP_FORCE_FROM: ${SMTP_FORCE_FROM:-}
+    networks:
+      - melis
+    restart: unless-stopped
+
+  # Local mail catcher — the destination of everything PHP's mail() sends (see the
+  # SMTP_* vars on php). Mailpit is an SMTP server (:1025) that accepts every message
+  # and NEVER delivers it, plus a web UI (:8025) to read them. That is what makes the
+  # email-2FA login usable offline: submit the login form, open the UI, read the code.
+  # No host port for SMTP on purpose — only the php container needs to reach it.
+  mail:
+    image: axllent/mailpit:latest
+    container_name: ${MELIS_CONTAINER_NAME:-melis}-mail
+    ports:
+      - "127.0.0.1:${MAILPIT_PORT:-8025}:8025"
+    environment:
+      MP_MAX_MESSAGES: 500
+      # Keep the mailbox in the container: a dev catcher has nothing worth persisting.
+      MP_DATABASE: ""
     networks:
       - melis
     restart: unless-stopped

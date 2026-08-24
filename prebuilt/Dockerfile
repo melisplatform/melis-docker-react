@@ -34,6 +34,13 @@ RUN apt-get update -y && apt-get upgrade -y \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         git unzip curl wget \
         default-mysql-client \
+        # Mail: PHP's mail() shells out to sendmail_path (/usr/sbin/sendmail), which the
+        # base php image does NOT provide — any send (e.g. the 2FA login code of
+        # melis-login-2fa-email) dies with "Unable to send mail: Unknown error".
+        # msmtp-mta supplies that /usr/sbin/sendmail as a thin SMTP client; the entrypoint
+        # writes /etc/msmtprc from SMTP_* (default: the stack's mailpit catcher).
+        msmtp \
+        msmtp-mta \
         libxml2-dev libonig-dev libcurl4-gnutls-dev libzip-dev \
         libjpeg-dev libfreetype6-dev libjpeg62-turbo-dev zlib1g-dev libpng-dev \
         libicu-dev tzdata \

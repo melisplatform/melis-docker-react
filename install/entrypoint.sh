@@ -166,4 +166,12 @@ if [ -f /melis-conf/melis-module-applier.sh ]; then
     bash /melis-conf/melis-module-applier.sh &
 fi
 
+# --- Mail (PHP mail() -> /usr/sbin/sendmail -> SMTP) -----------------------
+# The base image has no MTA at all, so anything calling mail() — notably the
+# 2FA-by-email login — fails with "Unable to send mail: Unknown error". Write
+# msmtp's config from the SMTP_* vars (defaults: the stack's mailpit catcher).
+if [ -f /melis-conf/mail-setup.sh ]; then
+  bash /melis-conf/mail-setup.sh || true
+fi
+
 exec apache2-foreground
